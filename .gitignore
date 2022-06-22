@@ -1,4 +1,4 @@
-./src/config.rs
-./src/utils/messages.json
-./target/*
-./direct_messages.db
+/src/config.rs
+/src/utils/messages.json
+/target/*
+/direct_messages.db

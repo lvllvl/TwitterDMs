@@ -1,0 +1,21 @@
+[package]
+name = "egg_test"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+egg-mode = "0.16"
+futures = "0.3.21"
+tokio = { version = "1", features = ["full"] }
+mini-redis = "0.4"
+url = "2.2.2"
+lazy_static = "1.4.0"
+chrono = "0.4"
+http = "0.2.8"
+thiserror = "1.0.31"
+hyper = "0.14"
+serde = "1.0.137"
+serde_json = "1.0.81"
+rusqlite = "0.27.0"
