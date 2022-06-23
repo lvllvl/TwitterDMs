@@ -1,5 +1,15 @@
 # Outline
 
+## Project Overview
+A Rust project that aims to create a user interface (UI) for accessing / interacting with Twitter direct messages (DMs).
+
+This project accesses the Twitter API using Rust egg_mode. 
+
+This project currently uses a rusqlite database to temporarily store and access DMs. 
+
+Not sure if I want to use TUI-rust or Rust::Rocket as a UI. TBD. 
+
+
 ## What needs to be done?
 
 1. Decide display method, e.g., TUI-Rust, webapp?
