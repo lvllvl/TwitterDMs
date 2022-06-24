@@ -19,3 +19,6 @@ hyper = "0.14"
 serde = "1.0.137"
 serde_json = "1.0.81"
 rusqlite = "0.27.0"
+
+crossterm = "0.23"
+tui = "0.18"
