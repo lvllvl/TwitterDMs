@@ -62,36 +62,33 @@ pub async fn requesting_user_authorization() -> Result<Users, Box< dyn std::erro
         )
         .unwrap();
 
-
-    let _user_info = Users::new( token, user_id, screen_name, connection ); 
+    // let friends = std::collections::HashMap::new();
+    let mut _user_info = Users::new( token, user_id, screen_name, connection); 
     Ok( _user_info )
 }
 
 /// Get most recent 50 direct messages associated with a specific user
-/// from the last 30 days. 
-/// TODO: Add all messages to database, then function should return nothing
-/// FIXME: Find out how to get all messages in a user's account.
-/// FIXME: Will you return DirectMessage hashMap or a custom data structure?
-/// database module --> sqlite
-// pub async fn get_direct_messages( user_token: &Users ) -> std::collections::HashMap<u64, std::vec::Vec<egg_mode::direct::DirectMessage>> {
+/// from the last 30 days. FIXME: Find out how to get more messages from a user's account.
 pub async fn get_direct_messages( user_token: &Users ) -> Result<()> {
-    // Get all Direct Messages for User --> Messages organized by conversation
-    let mut timeline = egg_mode::direct::list( &user_token.token ).with_page_size( 50 ); 
-       
-    // HashMap key = Unique convo, value = arr[ messages from convo ] arr[0] == Newest message
-    let mut messages = timeline.into_conversations().await.unwrap(); // Return this !  
 
+    let mut friends_screen_names = std::collections::HashMap::new();
+    friends_screen_names.insert( user_token.user_id,  &user_token.screen_name ); 
+
+    let mut timeline = egg_mode::direct::list( &user_token.token ).with_page_size( 50 ); // Get all message, org'd by conversation 
+       
+    // HashMap<key,value>, key = Unique convo, value = arr[ messages from convo ] arr[0] == Newest message
+    let mut messages = timeline.into_conversations().await.unwrap();
 
     // Iterate over hashMap keys, sub-loop iterates over messages ( an array of DirectMessage structs )
-    // TODO: Figure out what do with this... 
-    for ( key, val ) in &messages { 
-        // println!( "{}: {:?}", key, val ); 
+    for ( _key, val ) in &messages { // Add messages to database
         for ( pos, e ) in val.iter().enumerate() { 
-            let dateTime_var: i64 = e.created_at.timestamp(); 
-            let dateTime_var: u64 = dateTime_var.unsigned_abs();
+
+            let dateTime_var: i64 = e.created_at.timestamp(); // Get the dateTime in Unix Time format
+            let dateTime_var: u64 = dateTime_var.unsigned_abs(); // Convert to u64 FIXME: Not sure if this destroys / alters date data
             
-            let s_name: TwitterUser = get_account_by_id( e.sender_id, &user_token ).await;
-            let recipient_name: TwitterUser = get_account_by_id( e.recipient_id, &user_token ).await;
+            // FIXME: Create a HashMap for usernames. < K,V > == < user_id, screen_name > 
+            let s_name: String = get_account_by_id( e.sender_id, &user_token ).await.screen_name; // Get sender information 
+            let recipient_name: String = get_account_by_id( e.recipient_id, &user_token ).await.screen_name; 
             let text: String = e.text.clone();  // message text 
 
             user_token.sqlite_connection.execute(
@@ -102,8 +99,8 @@ pub async fn get_direct_messages( user_token: &Users ) -> Result<()> {
                         &dateTime_var, 
                         &e.sender_id,
                         &e.recipient_id,
-                        &s_name.screen_name,
-                        &recipient_name.screen_name,
+                        &s_name, // Screen name
+                        &recipient_name, // recipient screen name 
                         &text,  
                         ])?;
         }

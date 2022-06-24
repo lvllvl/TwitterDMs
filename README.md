@@ -51,3 +51,6 @@ Not sure if I want to use TUI-rust or Rust::Rocket as a UI. TBD.
         [] Send a message
         [] Update a conversation 
 
+### Testing !
+
+    [ ] ADD THIS ! 
