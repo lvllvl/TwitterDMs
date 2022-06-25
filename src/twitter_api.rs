@@ -105,8 +105,12 @@ pub async fn get_direct_messages( user_token: &Users ) -> Result<()> {
                         ])?;
         }
     }
+
+    // TODO: Insert or Update left side panel of UI (DMs Panel) 
+
     Ok(())
 }
+
 
 /// Gets an account object by username.
 pub async fn get_account_by_name( username: String, user_token: &Users ) -> TwitterUser {
