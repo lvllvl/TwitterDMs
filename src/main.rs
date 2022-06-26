@@ -1,16 +1,25 @@
 use mini_redis::{ client, Result };
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event as CEvent, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures::executor::block_on; 
-
+use chrono::{DateTime, Utc};
+use serde::{ Deserialize, Serialize }; 
 use std::{error::Error, io};
+use std::sync::mpsc;
+use std::fs;
+use std::time::{ Duration, Instant };
+use std::thread;
 use tui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
-    widgets::{Block, Borders},
+    layout::{Alignment, Constraint, Direction, Layout},
+    style::{Color, Modifier, Style },
+    widgets::{
+        Block, Borders, BorderType, Cell, List, ListItem, ListState, Paragraph, Row, Table, Tabs
+    },
+    text::{ Span, Spans },
     Frame, Terminal,
 };
 
@@ -23,41 +32,203 @@ mod twitter_api;
 mod direct_messages;
 mod error;  
 
+// FIXME: Delete the database after each session
+const DB_PATH: &str = "./direct_messages.db";
+
+// Data structure for input events
+enum Event<I> {
+    Input(I),
+    Tick,
+}
+#[derive( Copy, Clone, Debug ) ]
+enum MenuItem {
+    Home,
+    DMs,
+    EnterTextMessage,
+    Tweeting,
+}
+impl From<MenuItem> for usize {
+    fn from( input: MenuItem ) -> usize {
+        match input {
+            MenuItem::Home => 0,
+            MenuItem::DMs => 1, 
+            MenuItem::EnterTextMessage => 2, 
+            MenuItem::Tweeting => 3, 
+        }
+    }
+}
+
 #[ tokio::main ]
 async fn main() -> Result<()> {
     
+    // Get authorization, then organize messages   
     let request_auth = twitter_api::requesting_user_authorization(); 
     let request_auth: std::result::Result< users::Users, Box<dyn std::error::Error>> = request_auth.await;
     let request_auth = request_auth.unwrap(); // Get token, user_id, screen_name, sqlite connection
-
-    // println!( "{:?}", request_auth ); 
     let _messages = twitter_api::get_direct_messages( &request_auth ).await;  // Get all messages
+    
+
     // twitter_api::send_DM(String::from( "2 This is a test" ), request_auth.user_id, &request_auth).await; // Send a DM
     // let twitter_user = twitter_api::get_account_by_id( request_auth.user_id,  &request_auth ).await; // test unwrap Twitter User struct  
 
-    // setup terminal
-    enable_raw_mode()?;
+    // Setup Terminal
+    enable_raw_mode().expect("Can run in raw mode");
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-
+    terminal.clear()?; // clear the terminal and force full redraw on next draw call 
+    
     // create app and run it
-    let res = run_app(&mut terminal);
+    // let res = run_app(&mut terminal);
 
-    // restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    // // restore terminal
+    // disable_raw_mode()?;
+    // execute!(
+    //     terminal.backend_mut(),
+    //     LeaveAlternateScreen,
+    //     DisableMouseCapture
+    // )?;
+    // terminal.show_cursor()?;
 
-    if let Err(err) = res {
-        println!("{:?}", err)
+    // if let Err(err) = res {
+    //     println!("{:?}", err)
+    // }
+
+    // FIXME: Start here 
+    let menu_title = vec![ "home", "pets", "add", "delete", "quit" ];
+    let mut active_menu_item = MenuItem::Home;
+    let mut pet_list_state = ListState::default();
+    pet_list_state.select( Some( 0 ) );
+
+    let (tx, rx) = mpsc::channel();
+    let tick_rate = Duration::from_millis(200);
+    thread::spawn(move || {
+        let mut last_tick = Instant::now();
+        loop {
+            let timeout = tick_rate
+                .checked_sub(last_tick.elapsed())
+                .unwrap_or_else(|| Duration::from_secs(0));
+
+            if event::poll(timeout).expect("poll works") {
+                if let CEvent::Key(key) = event::read().expect("can read events") {
+                    tx.send(Event::Input(key)).expect("can send events");
+                }
+            }
+
+            if last_tick.elapsed() >= tick_rate {
+                if let Ok(_) = tx.send(Event::Tick) {
+                    last_tick = Instant::now();
+                }
+            }
+        }
+    });
+
+        // Tutorial loop TODO: delete this 
+    loop {
+        terminal.draw( |rect| {
+            let size = rect.size();
+            let chunks = Layout::default()
+                .direction( Direction::Horizontal )
+                .constraints( 
+                    [
+                        Constraint::Percentage( 30 ),
+                        Constraint::Percentage( 70 ), 
+                    ]
+                    .as_ref(),
+                )
+                .split( size );
+
+            let right_chunks = Layout::default()
+                .direction( Direction::Vertical )
+                .constraints( 
+                    [
+                        Constraint::Percentage( 80 ),
+                        Constraint::Percentage( 20 ),
+                    ]
+                    .as_ref(),
+                )
+                .split( chunks[ 1 ] );
+            
+            let block = Block::default().title("DMs").borders(Borders::ALL);
+            rect.render_widget(block, chunks[0]);
+        
+            let block = Block::default().title("Messages").borders(Borders::ALL);
+            rect.render_widget(block, right_chunks[0]);
+            
+            let block = Block::default().title("Enter Text Below").borders(Borders::ALL);
+            rect.render_widget(block, right_chunks[1]);
+           // TODO: get message here...
+        //    let copyright = Paragraph::new("Twitter DMs CLI")
+        //         .style(Style::default().fg(Color::LightCyan)) // FIXME: change the colors here 
+        //         .alignment(Alignment::Center)
+        //         .block(
+        //             Block::default()
+        //                 .borders(Borders::ALL)
+        //                 .style(Style::default().fg(Color::White))
+        //                 .title("") // FIXME: Change the title...  or not.
+        //                 .border_type(BorderType::Plain),
+        //         ); 
+
+        //    let menu = menu_title
+        //         .iter()
+        //         .map( |t| {
+        //             let (first, rest ) = t.split_at( 1 );
+        //             Spans::from( vec![
+        //                 Span::styled( first,
+        //                     Style::default()
+        //                         .fg( Color::Yellow )
+        //                         .add_modifier( Modifier::UNDERLINED ),
+        //                     ),
+        //                     Span::styled(rest, Style::default().fg( Color::White)),
+        //             ])
+        //         })
+        //         .collect();
+            
+                // let tabs = Tabs::new( menu )
+                //     .select( active_menu_item.into() )
+                //     .block( Block::default().title("Menu").borders( Borders::ALL))
+                //     .style( Style::default().fg( Color::White ))
+                //     .highlight_style( Style::default().fg( Color::Yellow ))
+                //     .divider( Span::raw( "|" ));
+                
+                // rect.render_widget( tabs, chunks[0] );
+                
+                // TODO: This should reflect the selcted conversation 
+                // match active_menu_item {
+                //     MenuItem::Home => rect.render_widget( render_home(), chunks[1] ),
+                //     MenuItem::DMs => {
+                //         let pets_chunks = Layout::default()
+                //             .direction( Direction::Horizontal )
+                //             .constraints( 
+                //                 [ Constraint::Percentage( 20 ), Constraint::Percentage( 80 )].as_ref(),
+                //             )
+                //             .split( chunks[1] );
+                //         let ( left, right ) = render_pets( &pet_list_state ); 
+                //         rect.render_stateful_widget( left, pets_chunks[0], &mut pet_list_state ); 
+                //         rect.render_widget( right, pets_chunks[1] ); 
+                //     }
+                // }
+                // rect.render_widget( copyright, chunks[2] );  
+        })?;
+
+        // TODO: Keyboard monitoring --> take the following actions 
+        match rx.recv()? {
+            Event::Input(event) => match event.code {
+                KeyCode::Char('q') => {
+                    disable_raw_mode()?;
+                    terminal.show_cursor()?;
+                    break;
+                }
+                KeyCode::Char('d') => active_menu_item = MenuItem::DMs,
+                KeyCode::Char('t') => active_menu_item = MenuItem::Tweeting,
+                KeyCode::Char('e') => active_menu_item = MenuItem::EnterTextMessage,
+                _ => {}
+            },
+            Event::Tick => {}
+        }
     }
-
+    // FIXME: End here 
     Ok(())
 }
 
@@ -65,7 +236,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
     loop {
         terminal.draw(|f| ui(f))?;
 
-        if let Event::Key(key) = event::read()? {
+        if let CEvent::Key(key) = event::read()? {
             if let KeyCode::Char('q') = key.code {
                 return Ok(());
             }
@@ -106,3 +277,153 @@ fn ui<B: Backend>(f: &mut Frame<B>) {
     let block = Block::default().title("Enter Text Below").borders(Borders::ALL);
     f.render_widget(block, right_chunks[1]);
 }
+
+
+// FIXME: DELET THIS 
+fn render_home<'a>() -> Paragraph<'a> {
+    let home = Paragraph::new(vec![
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("Welcome")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("to")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::styled(
+            "pet-CLI",
+            Style::default().fg(Color::LightBlue),
+        )]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("Press 'p' to access pets, 'a' to add random new pets and 'd' to delete the currently selected pet.")]),
+    ])
+    .alignment(Alignment::Center)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default().fg(Color::White))
+            .title("Home")
+            .border_type(BorderType::Plain),
+    );
+    home
+}
+
+// fn render_pets<'a>( pet_list_state: &ListState) -> (List<'a>, Table<'a>) {
+// fn render_pets<'a>( dm_list_state: &ListState) -> (List<'a>, Table<'a>) {
+
+//     let dms = Block::default()
+//         .borders(Borders::ALL)
+//         .style(Style::default().fg(Color::White))
+//         .title("Pets")
+//         .border_type(BorderType::Plain);
+
+//     let dm_list = read_db().expect("can fetch dm list");
+//     let items: Vec<_> = dm_list
+//         .iter()
+//         .map(|dm| {
+//             ListItem::new(Spans::from(vec![Span::styled(
+//                 dm.name.clone(),
+//                 Style::default(),
+//             )]))
+//         })
+//         .collect();
+
+//     let selected_dm = dm_list
+//         .get(
+//             dm_list_state
+//                 .selected()
+//                 .expect("there is always a selected Direct Message"),
+//         )
+//         .expect("exists")
+//         .clone();
+
+//     let list = List::new(items).block(dms).highlight_style(
+//         Style::default()
+//             .bg(Color::Yellow)
+//             .fg(Color::Black)
+//             .add_modifier(Modifier::BOLD),
+//     );
+
+//     let dm_detail = Table::new(vec![Row::new(vec![
+//         Cell::from(Span::raw(selected_dm.id.to_string())),
+//         Cell::from(Span::raw(selected_dm.name)),
+//         Cell::from(Span::raw(selected_dm.category)),
+//         Cell::from(Span::raw(selected_dm.age.to_string())),
+//         Cell::from(Span::raw(selected_dm.created_at.to_string())),
+//     ])])
+//     .header(Row::new(vec![
+//         Cell::from(Span::styled(
+//             "ID",
+//             Style::default().add_modifier(Modifier::BOLD),
+//         )),
+//         Cell::from(Span::styled(
+//             "Name",
+//             Style::default().add_modifier(Modifier::BOLD),
+//         )),
+//         Cell::from(Span::styled(
+//             "Category",
+//             Style::default().add_modifier(Modifier::BOLD),
+//         )),
+//         Cell::from(Span::styled(
+//             "Age",
+//             Style::default().add_modifier(Modifier::BOLD),
+//         )),
+//         Cell::from(Span::styled(
+//             "Created At",
+//             Style::default().add_modifier(Modifier::BOLD),
+//         )),
+//     ]))
+//     .block(
+//         Block::default()
+//             .borders(Borders::ALL)
+//             .style(Style::default().fg(Color::White))
+//             .title("Detail")
+//             .border_type(BorderType::Plain),
+//     )
+//     .widths(&[
+//         Constraint::Percentage(5),
+//         Constraint::Percentage(20),
+//         Constraint::Percentage(20),
+//         Constraint::Percentage(5),
+//         Constraint::Percentage(20),
+//     ]);
+
+//     (list, dm_detail)
+// }
+
+// FIXME: pull messages from database 
+// fn read_db() -> Result<Vec<direct_messages::Messages>, Error> {
+//     let db_content = fs::read_to_string(DB_PATH)?;
+//     let parsed: Vec<direct_messages::Messages> = serde_json::from_str(&db_content)?;
+//     Ok(parsed)
+// }
+
+// fn add_random_pet_to_db() -> Result<Vec<Pet>, Error> {
+//     let mut rng = rand::thread_rng();
+//     let db_content = fs::read_to_string(DB_PATH)?;
+//     let mut parsed: Vec<Pet> = serde_json::from_str(&db_content)?;
+//     let catsdogs = match rng.gen_range(0, 1) {
+//         0 => "cats",
+//         _ => "dogs",
+//     };
+
+//     let random_pet = Pet {
+//         id: rng.gen_range(0, 9999999),
+//         name: rng.sample_iter(Alphanumeric).take(10).collect(),
+//         category: catsdogs.to_owned(),
+//         age: rng.gen_range(1, 15),
+//         created_at: Utc::now(),
+//     };
+
+//     parsed.push(random_pet);
+//     fs::write(DB_PATH, &serde_json::to_vec(&parsed)?)?;
+//     Ok(parsed)
+// }
+
+// fn remove_pet_at_index(pet_list_state: &mut ListState) -> Result<(), Error> {
+//     if let Some(selected) = pet_list_state.selected() {
+//         let db_content = fs::read_to_string(DB_PATH)?;
+//         let mut parsed: Vec<Pet> = serde_json::from_str(&db_content)?;
+//         parsed.remove(selected);
+//         fs::write(DB_PATH, &serde_json::to_vec(&parsed)?)?;
+//         pet_list_state.select(Some(selected - 1));
+//     }
+//     Ok(())
+// }
