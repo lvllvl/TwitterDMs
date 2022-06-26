@@ -7,11 +7,15 @@ use crossterm::{
 use futures::executor::block_on; 
 use chrono::{DateTime, Utc};
 use serde::{ Deserialize, Serialize }; 
-use std::{error::Error, io};
-use std::sync::mpsc;
-use std::fs;
-use std::time::{ Duration, Instant };
-use std::thread;
+
+use std::{
+    error:: { Error }, 
+    io, sync::mpsc, 
+    fs, 
+    time::{ 
+        Duration, Instant }, 
+    thread };
+
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout},
