@@ -48,15 +48,16 @@ pub async fn requesting_user_authorization() -> Result<Users, Box< dyn std::erro
     connection.execute(
             "
             CREATE TABLE IF NOT EXISTS direct_messages 
-                (
-                    message_id INTEGER,
+                (   
+                    message_id TEXT,
                     created_at INTEGER,
                     sender_id INTEGER,
                     recipient_id INTEGER,
                     sender_sn TEXT,
                     recipient_sn TEXT,
+                    convo_id TEXT,
                     message_text TEXT,
-                    PRIMARY KEY (sender_id, recipient_id, message_id));
+                    PRIMARY KEY (sender_id, recipient_id, message_id ));
             ",
             NO_PARAMS,
         )
@@ -65,6 +66,12 @@ pub async fn requesting_user_authorization() -> Result<Users, Box< dyn std::erro
     // let friends = std::collections::HashMap::new();
     let mut _user_info = Users::new( token, user_id, screen_name, connection); 
     Ok( _user_info )
+}
+
+use std::any::type_name; 
+/// Check type name of a variable 
+pub fn type_of<T>( _: T ) -> &'static str {
+    type_name::<T>()
 }
 
 /// Get most recent 50 direct messages associated with a specific user
@@ -78,36 +85,36 @@ pub async fn get_direct_messages( user_token: &Users ) -> Result<()> {
        
     // HashMap<key,value>, key = Unique convo, value = arr[ messages from convo ] arr[0] == Newest message
     let mut messages = timeline.into_conversations().await.unwrap();
+    let convo_keys = messages.keys();
+    println!( "convo_keys: {:?}", convo_keys ); // TODO: delete this !  
 
     // Iterate over hashMap keys, sub-loop iterates over messages ( an array of DirectMessage structs )
     for ( _key, val ) in &messages { // Add messages to database
+        // println!( "Type of _key: {}", type_of( _key ) ); // TODO: delete this ...  Type = &u64
         for ( pos, e ) in val.iter().enumerate() { 
-
-            let dateTime_var: i64 = e.created_at.timestamp(); // Get the dateTime in Unix Time format
-            let dateTime_var: u64 = dateTime_var.unsigned_abs(); // Convert to u64 FIXME: Not sure if this destroys / alters date data
             
             // FIXME: Create a HashMap for usernames. < K,V > == < user_id, screen_name > 
             let s_name: String = get_account_by_id( e.sender_id, &user_token ).await.screen_name; // Get sender information 
             let recipient_name: String = get_account_by_id( e.recipient_id, &user_token ).await.screen_name; 
             let text: String = e.text.clone();  // message text 
+            let dateTime_var: i64 = e.created_at.timestamp(); // Get the dateTime in Unix Time format
+            let dateTime_var: u64 = dateTime_var.unsigned_abs(); // Convert to u64 FIXME: Not sure if this destroys / alters date data
 
             user_token.sqlite_connection.execute(
                 "INSERT INTO direct_messages (
-                    message_id, created_at, sender_id, recipient_id, sender_sn, recipient_sn, message_text) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    message_id, created_at, sender_id, recipient_id, sender_sn, recipient_sn, convo_id, message_text) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                     params![ 
-                        &e.id, 
+                        &e.id.to_string(), 
                         &dateTime_var, 
                         &e.sender_id,
                         &e.recipient_id,
                         &s_name, // Screen name
                         &recipient_name, // recipient screen name 
+                        &_key.to_string(),
                         &text,  
                         ])?;
         }
     }
-
-    // TODO: Insert or Update left side panel of UI (DMs Panel) 
-
     Ok(())
 }
 
@@ -139,15 +146,13 @@ pub async fn _get_last_tweet(user_id: u64, user_token: &Users ) -> u64 {
     return timeline.max_id.unwrap();
 }
 
-// DraftMessage::new(text: impl Into<Cow<'static, str>>, recipient: impl Into<UserID>).send(token: &auth::Token);
-/// Send a direct message using the token
-/// 
 /// Recipient must allow DMs from authenticated user for this to be successful. 
 ///     e.g., Recipient must follow authenticated user,
 ///           or they must allow DMs from anyone
 /// Latter setting has no visibility on API. There may be situations where you are
 /// unable to verify the recipient's ability to recieve request DM beforehanbd.
 /// FIXME: Do you want to return the same signature as egg_mode? e.g., Result<Response<directMessage>, error>
+/// FIXME: This should update your database --> an INSERT statment
 pub async fn send_DM( text: String, recipient_id: u64, user_token: &Users ) {
     
     let _message = egg_mode::direct::DraftMessage::new( text, UserID::ID(recipient_id)).send( &user_token.token ).await;

@@ -1,26 +1,30 @@
 use egg_mode; 
 use egg_mode::tweet::TweetSource; 
-use egg_mode::direct::DirectMessage; 
+// use egg_mode::direct::DirectMessage; 
 use chrono::{ DateTime, Utc }; 
 
 pub struct Messages {
 
     pub message_id: u64,
     pub created_at: DateTime<Utc>,
-    pub text: String,
     pub sender_id: u64,
-    pub sender_screen_name: String,
-    pub source_app: Option<TweetSource>,
     pub recipient_id: u64,
+    pub sender_screen_name: String,
     pub recipient_screen_name: String,
-
+    pub conversation_id: u64,
+    pub text: String,
 }
 
 impl Messages {
-    pub fn new( message_id: u64, created_at: DateTime<Utc>,
-                text: String, sender_id: u64,
-                sender_screen_name: String, source_app: Option<TweetSource>,
-                recipient_id: u64, recipient_screen_name: String  ) -> Self {
+    pub fn new( 
+                message_id: u64, 
+                created_at: DateTime<Utc>,
+                sender_id: u64,
+                recipient_id: u64, 
+                sender_screen_name: String, 
+                recipient_screen_name: String, 
+                text: String, 
+            ) -> Self {
 
         Messages {
             message_id: message_id,
@@ -35,3 +39,12 @@ impl Messages {
 
     }
 }
+
+                        // &e.id.to_string(), message ID
+                        // &dateTime_var, date Time 
+                        // &e.sender_id, sender ID
+                        // &e.recipient_id, recipient ID
+                        // &s_name, // Screen name 
+                        // &recipient_name, // recipient screen name 
+                        // &_key.to_string(), // conversation ID 
+                        // &text,  // text 

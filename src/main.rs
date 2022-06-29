@@ -7,7 +7,7 @@ use crossterm::{
 use futures::executor::block_on; 
 use chrono::{DateTime, Utc};
 use serde::{ Deserialize, Serialize }; 
-
+use rusqlite::{ Connection, NO_PARAMS } ; 
 use std::{
     error:: { Error }, 
     io, sync::mpsc, 
@@ -70,18 +70,20 @@ async fn main() -> Result<()> {
     let request_auth: std::result::Result< users::Users, Box<dyn std::error::Error>> = request_auth.await;
     let request_auth = request_auth.unwrap(); // Get token, user_id, screen_name, sqlite connection
     let _messages = twitter_api::get_direct_messages( &request_auth ).await;  // Get all messages
-    
+
+    let d = read_db( &request_auth.sqlite_connection ); 
+    println!( "{:?}", d );  
 
     // twitter_api::send_DM(String::from( "2 This is a test" ), request_auth.user_id, &request_auth).await; // Send a DM
     // let twitter_user = twitter_api::get_account_by_id( request_auth.user_id,  &request_auth ).await; // test unwrap Twitter User struct  
 
     // Setup Terminal
-    enable_raw_mode().expect("Can run in raw mode");
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    terminal.clear()?; // clear the terminal and force full redraw on next draw call 
+    // enable_raw_mode().expect("Can run in raw mode");
+    // let mut stdout = io::stdout();
+    // execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    // let backend = CrosstermBackend::new(stdout);
+    // let mut terminal = Terminal::new(backend)?;
+    // terminal.clear()?; // clear the terminal and force full redraw on next draw call 
     
     // create app and run it
     // let res = run_app(&mut terminal);
@@ -100,140 +102,173 @@ async fn main() -> Result<()> {
     // }
 
     // FIXME: Start here 
-    let menu_title = vec![ "home", "pets", "add", "delete", "quit" ];
-    let mut active_menu_item = MenuItem::Home;
-    let mut pet_list_state = ListState::default();
-    pet_list_state.select( Some( 0 ) );
+    // let menu_title = vec![ "home", "pets", "add", "delete", "quit" ];
+    // let mut active_menu_item = MenuItem::Home;
+    // let mut pet_list_state = ListState::default();
+    // pet_list_state.select( Some( 0 ) );
 
-    let (tx, rx) = mpsc::channel();
-    let tick_rate = Duration::from_millis(200);
-    thread::spawn(move || {
-        let mut last_tick = Instant::now();
-        loop {
-            let timeout = tick_rate
-                .checked_sub(last_tick.elapsed())
-                .unwrap_or_else(|| Duration::from_secs(0));
+    // let (tx, rx) = mpsc::channel();
+    // let tick_rate = Duration::from_millis(200);
+    // thread::spawn(move || {
+    //     let mut last_tick = Instant::now();
+    //     loop {
+    //         let timeout = tick_rate
+    //             .checked_sub(last_tick.elapsed())
+    //             .unwrap_or_else(|| Duration::from_secs(0));
 
-            if event::poll(timeout).expect("poll works") {
-                if let CEvent::Key(key) = event::read().expect("can read events") {
-                    tx.send(Event::Input(key)).expect("can send events");
-                }
-            }
+    //         if event::poll(timeout).expect("poll works") {
+    //             if let CEvent::Key(key) = event::read().expect("can read events") {
+    //                 tx.send(Event::Input(key)).expect("can send events");
+    //             }
+    //         }
 
-            if last_tick.elapsed() >= tick_rate {
-                if let Ok(_) = tx.send(Event::Tick) {
-                    last_tick = Instant::now();
-                }
-            }
-        }
-    });
+    //         if last_tick.elapsed() >= tick_rate {
+    //             if let Ok(_) = tx.send(Event::Tick) {
+    //                 last_tick = Instant::now();
+    //             }
+    //         }
+    //     }
+    // });
 
-        // Tutorial loop TODO: delete this 
-    loop {
-        terminal.draw( |rect| {
-            let size = rect.size();
-            let chunks = Layout::default()
-                .direction( Direction::Horizontal )
-                .constraints( 
-                    [
-                        Constraint::Percentage( 30 ),
-                        Constraint::Percentage( 70 ), 
-                    ]
-                    .as_ref(),
-                )
-                .split( size );
+    //     // Tutorial loop TODO: delete this 
+    // loop {
+    //     terminal.draw( |rect| {
+    //         let size = rect.size();
+    //         let chunks = Layout::default()
+    //             .direction( Direction::Horizontal )
+    //             .constraints( 
+    //                 [
+    //                     Constraint::Percentage( 30 ),
+    //                     Constraint::Percentage( 70 ), 
+    //                 ]
+    //                 .as_ref(),
+    //             )
+    //             .split( size );
 
-            let right_chunks = Layout::default()
-                .direction( Direction::Vertical )
-                .constraints( 
-                    [
-                        Constraint::Percentage( 80 ),
-                        Constraint::Percentage( 20 ),
-                    ]
-                    .as_ref(),
-                )
-                .split( chunks[ 1 ] );
+    //         let right_chunks = Layout::default()
+    //             .direction( Direction::Vertical )
+    //             .constraints( 
+    //                 [
+    //                     Constraint::Percentage( 80 ),
+    //                     Constraint::Percentage( 20 ),
+    //                 ]
+    //                 .as_ref(),
+    //             )
+    //             .split( chunks[ 1 ] );
             
-            let block = Block::default().title("DMs").borders(Borders::ALL);
-            rect.render_widget(block, chunks[0]);
+    //         let block = Block::default().title("DMs").borders(Borders::ALL);
+    //         rect.render_widget(block, chunks[0]);
         
-            let block = Block::default().title("Messages").borders(Borders::ALL);
-            rect.render_widget(block, right_chunks[0]);
+    //         let block = Block::default().title("Messages").borders(Borders::ALL);
+    //         rect.render_widget(block, right_chunks[0]);
             
-            let block = Block::default().title("Enter Text Below").borders(Borders::ALL);
-            rect.render_widget(block, right_chunks[1]);
-           // TODO: get message here...
-        //    let copyright = Paragraph::new("Twitter DMs CLI")
-        //         .style(Style::default().fg(Color::LightCyan)) // FIXME: change the colors here 
-        //         .alignment(Alignment::Center)
-        //         .block(
-        //             Block::default()
-        //                 .borders(Borders::ALL)
-        //                 .style(Style::default().fg(Color::White))
-        //                 .title("") // FIXME: Change the title...  or not.
-        //                 .border_type(BorderType::Plain),
-        //         ); 
+    //         let block = Block::default().title("Enter Text Below").borders(Borders::ALL)
+    //             .style( Style::default().fg( Color::LightRed ))
+    //             .borders( Borders::ALL )
+    //             .style( Style::default().fg( Color::White ))
+    //             .border_type( BorderType::Thick );
+    //         rect.render_widget(block, right_chunks[1]);
+    //        // TODO: get message here...
+    //     //    let copyright = Paragraph::new("Twitter DMs CLI")
+    //     //         .style(Style::default().fg(Color::LightCyan)) // FIXME: change the colors here 
+    //     //         .alignment(Alignment::Center)
+    //     //         .block(
+    //     //             Block::default()
+    //     //                 .borders(Borders::ALL)
+    //     //                 .style(Style::default().fg(Color::White))
+    //     //                 .title("") // FIXME: Change the title...  or not.
+    //     //                 .border_type(BorderType::Plain),
+    //     //         ); 
 
-        //    let menu = menu_title
-        //         .iter()
-        //         .map( |t| {
-        //             let (first, rest ) = t.split_at( 1 );
-        //             Spans::from( vec![
-        //                 Span::styled( first,
-        //                     Style::default()
-        //                         .fg( Color::Yellow )
-        //                         .add_modifier( Modifier::UNDERLINED ),
-        //                     ),
-        //                     Span::styled(rest, Style::default().fg( Color::White)),
-        //             ])
-        //         })
-        //         .collect();
+    //     //    let menu = menu_title
+    //     //         .iter()
+    //     //         .map( |t| {
+    //     //             let (first, rest ) = t.split_at( 1 );
+    //     //             Spans::from( vec![
+    //     //                 Span::styled( first,
+    //     //                     Style::default()
+    //     //                         .fg( Color::Yellow )
+    //     //                         .add_modifier( Modifier::UNDERLINED ),
+    //     //                     ),
+    //     //                     Span::styled(rest, Style::default().fg( Color::White)),
+    //     //             ])
+    //     //         })
+    //     //         .collect();
             
-                // let tabs = Tabs::new( menu )
-                //     .select( active_menu_item.into() )
-                //     .block( Block::default().title("Menu").borders( Borders::ALL))
-                //     .style( Style::default().fg( Color::White ))
-                //     .highlight_style( Style::default().fg( Color::Yellow ))
-                //     .divider( Span::raw( "|" ));
+    //             // let tabs = Tabs::new( menu )
+    //             //     .select( active_menu_item.into() )
+    //             //     .block( Block::default().title("Menu").borders( Borders::ALL))
+    //             //     .style( Style::default().fg( Color::White ))
+    //             //     .highlight_style( Style::default().fg( Color::Yellow ))
+    //             //     .divider( Span::raw( "|" ));
                 
-                // rect.render_widget( tabs, chunks[0] );
+    //             // rect.render_widget( tabs, chunks[0] );
                 
-                // TODO: This should reflect the selcted conversation 
-                // match active_menu_item {
-                //     MenuItem::Home => rect.render_widget( render_home(), chunks[1] ),
-                //     MenuItem::DMs => {
-                //         let pets_chunks = Layout::default()
-                //             .direction( Direction::Horizontal )
-                //             .constraints( 
-                //                 [ Constraint::Percentage( 20 ), Constraint::Percentage( 80 )].as_ref(),
-                //             )
-                //             .split( chunks[1] );
-                //         let ( left, right ) = render_pets( &pet_list_state ); 
-                //         rect.render_stateful_widget( left, pets_chunks[0], &mut pet_list_state ); 
-                //         rect.render_widget( right, pets_chunks[1] ); 
-                //     }
-                // }
-                // rect.render_widget( copyright, chunks[2] );  
-        })?;
+    //             // TODO: This should reflect the selcted conversation 
+    //             // match active_menu_item {
+    //             //     MenuItem::Home => rect.render_widget( render_home(), chunks[1] ),
+    //             //     MenuItem::DMs => {
+    //             //         let pets_chunks = Layout::default()
+    //             //             .direction( Direction::Horizontal )
+    //             //             .constraints( 
+    //             //                 [ Constraint::Percentage( 20 ), Constraint::Percentage( 80 )].as_ref(),
+    //             //             )
+    //             //             .split( chunks[1] );
+    //             //         let ( left, right ) = render_pets( &pet_list_state ); 
+    //             //         rect.render_stateful_widget( left, pets_chunks[0], &mut pet_list_state ); 
+    //             //         rect.render_widget( right, pets_chunks[1] ); 
+    //             //     }
+    //             // }
+    //             // rect.render_widget( copyright, chunks[2] );  
+    //     })?;
 
-        // TODO: Keyboard monitoring --> take the following actions 
-        match rx.recv()? {
-            Event::Input(event) => match event.code {
-                KeyCode::Char('q') => {
-                    disable_raw_mode()?;
-                    terminal.show_cursor()?;
-                    break;
-                }
-                KeyCode::Char('d') => active_menu_item = MenuItem::DMs,
-                KeyCode::Char('t') => active_menu_item = MenuItem::Tweeting,
-                KeyCode::Char('e') => active_menu_item = MenuItem::EnterTextMessage,
-                _ => {}
-            },
-            Event::Tick => {}
-        }
-    }
+    //     // TODO: Keyboard monitoring --> take the following actions 
+    //     match rx.recv()? {
+    //         Event::Input(event) => match event.code {
+    //             KeyCode::Char('q') => {
+    //                 disable_raw_mode()?;
+    //                 terminal.show_cursor()?;
+    //                 break;
+    //             }
+    //             KeyCode::Char('d') => active_menu_item = MenuItem::DMs,
+    //             KeyCode::Char('t') => active_menu_item = MenuItem::Tweeting,
+    //             KeyCode::Char('e') => active_menu_item = MenuItem::EnterTextMessage,
+    //             _ => {}
+    //         },
+    //         Event::Tick => {}
+    //     }
+    //     // read_db( &request_auth.sqlite_connection ).unwrap(); 
+    // }
     // FIXME: End here 
     Ok(())
+}
+
+
+/// Pull message information from the database 
+/// FIXME: pull messages from database 
+fn read_db( conn: &Connection ) -> Result<Vec<String>> {
+
+    let mut stmt = conn.prepare( 
+        "SELECT * FROM direct_messages dms
+        ORDER BY dms.convo_id"
+         )?;
+
+    let mut rows = stmt.query( [] )?;
+    println!( "Type of Rows == {}", twitter_api::type_of( &rows )); 
+    // println!( "Rows == {}", &rows ); 
+
+    let mut names = Vec::new(); 
+    while let Some( row ) = rows.next()? {
+        println!( "Type of Rows == {}", twitter_api::type_of( &row )); 
+        names.push( row.get( 0 )? );
+        names.push( row.get( 1 )? );
+    }
+    // match names {
+    //     Ok( names ) => println!( "Successfull: {}", names ),
+    //     Err( err ) => println!( "Failure: {}", err ), 
+
+    // }
+    Ok( names ) 
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
@@ -309,7 +344,6 @@ fn render_home<'a>() -> Paragraph<'a> {
     home
 }
 
-// fn render_pets<'a>( pet_list_state: &ListState) -> (List<'a>, Table<'a>) {
 // fn render_pets<'a>( dm_list_state: &ListState) -> (List<'a>, Table<'a>) {
 
 //     let dms = Block::default()
@@ -392,12 +426,6 @@ fn render_home<'a>() -> Paragraph<'a> {
 //     (list, dm_detail)
 // }
 
-// FIXME: pull messages from database 
-// fn read_db() -> Result<Vec<direct_messages::Messages>, Error> {
-//     let db_content = fs::read_to_string(DB_PATH)?;
-//     let parsed: Vec<direct_messages::Messages> = serde_json::from_str(&db_content)?;
-//     Ok(parsed)
-// }
 
 // fn add_random_pet_to_db() -> Result<Vec<Pet>, Error> {
 //     let mut rng = rand::thread_rng();
