@@ -37,7 +37,7 @@ mod direct_messages;
 mod error;  
 
 // FIXME: Delete the database after each session
-const DB_PATH: &str = "./direct_messages.db";
+// const DB_PATH: &str = "./direct_messages.db";
 
 // Data structure for input events
 enum Event<I> {
@@ -245,10 +245,9 @@ async fn main() -> Result<()> {
 
 
 /// Pull message information from the database 
-/// FIXME: pull messages from database 
-fn read_db( conn: &Connection ) -> Result<Vec<String>> {
-
-    let mut stmt = conn.prepare( "SELECT * FROM direct_messages")?;
+fn read_db( conn: &Connection ) -> Result<Vec<direct_messages::Messages>> {
+    println!( "read_db function starting...\n");
+    let mut stmt = conn.prepare( "SELECT * FROM direct_messages ORDER BY convo_id")?;
     let message_iter = stmt.query_map( [], | row | {
 
         Ok( direct_messages::Messages{
@@ -263,32 +262,17 @@ fn read_db( conn: &Connection ) -> Result<Vec<String>> {
         })
     })?; 
 
-    // let mut stmt = conn.prepare( 
-    //     "SELECT * FROM direct_messages dms
-    //     ORDER BY dms.convo_id"
-    //      )?;
-
-    let mut rows = stmt.query( [] )?;
-    println!( "Type of Rows == {}", twitter_api::type_of( &rows )); 
-    // println!( "Rows == {}", &rows ); 
-
-    let mut names = Vec::new(); 
-    while let Some( row ) = rows.next()? {
-        println!( "Type of Rows == {}", twitter_api::type_of( &row )); 
-        names.push( row.get( 0 )? );
-        names.push( row.get( 1 )? );
+    let mut dms = Vec::new();
+    for message in message_iter {
+        dms.push( message? );
     }
-    // match names {
-    //     Ok( names ) => println!( "Successfull: {}", names ),
-    //     Err( err ) => println!( "Failure: {}", err ), 
 
-    // }
-    Ok( names ) 
+    Ok( dms ) 
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
+fn _run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
     loop {
-        terminal.draw(|f| ui(f))?;
+        terminal.draw(|f| _ui(f))?;
 
         if let CEvent::Key(key) = event::read()? {
             if let KeyCode::Char('q') = key.code {
@@ -298,7 +282,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
     }
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>) {
+fn _ui<B: Backend>(f: &mut Frame<B>) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(

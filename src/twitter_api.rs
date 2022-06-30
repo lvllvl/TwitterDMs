@@ -3,14 +3,14 @@ use egg_mode::user::{UserID, TwitterUser};
 // use egg_mode::tweet::Tweet;
 use egg_mode::direct::{ DraftMessage, DirectMessage }; 
 use rusqlite::{ Connection, Result, params }; 
-use rusqlite::NO_PARAMS; 
+// use rusqlite::NO_PARAMS; 
 
-use http::{Response}; 
+// use http::{Response}; 
 use std::io; 
 use crate::config::Config;
 use crate::users::Users;
-use crate::error; 
-// use crate::direct_messages::Messages; 
+// use crate::error; 
+use crate::direct_messages::Messages; 
 
 /// Ask user to authorize this application. Save token, user_id, and screen_name as global variables.  
 /// Start the database
@@ -55,22 +55,21 @@ pub async fn requesting_user_authorization() -> Result<Users, Box< dyn std::erro
                     recipient_id INTEGER,
                     sender_sn TEXT,
                     recipient_sn TEXT,
-                    convo_id TEXT,
+                    convo_id INTEGER,
                     message_text TEXT,
                     PRIMARY KEY (sender_id, recipient_id, message_id ));
             ",
-            NO_PARAMS,
+            [],
         )
         .unwrap();
 
-    // let friends = std::collections::HashMap::new();
     let mut _user_info = Users::new( token, user_id, screen_name, connection); 
     Ok( _user_info )
 }
 
 use std::any::type_name; 
 /// Check type name of a variable 
-pub fn type_of<T>( _: T ) -> &'static str {
+pub fn _type_of<T>( _: T ) -> &'static str {
     type_name::<T>()
 }
 
@@ -91,27 +90,52 @@ pub async fn get_direct_messages( user_token: &Users ) -> Result<()> {
     // Iterate over hashMap keys, sub-loop iterates over messages ( an array of DirectMessage structs )
     for ( _key, val ) in &messages { // Add messages to database
         // println!( "Type of _key: {}", type_of( _key ) ); // TODO: delete this ...  Type = &u64
-        for ( pos, e ) in val.iter().enumerate() { 
-            
-            // FIXME: Create a HashMap for usernames. < K,V > == < user_id, screen_name > 
+
+        for ( _pos, e ) in val.iter().enumerate() { 
+
             let s_name: String = get_account_by_id( e.sender_id, &user_token ).await.screen_name; // Get sender information 
             let recipient_name: String = get_account_by_id( e.recipient_id, &user_token ).await.screen_name; 
-            let text: String = e.text.clone();  // message text 
-            let dateTime_var: i64 = e.created_at.timestamp(); // Get the dateTime in Unix Time format
-            let dateTime_var: u64 = dateTime_var.unsigned_abs(); // Convert to u64 FIXME: Not sure if this destroys / alters date data
+            // let dateTime_var: i64 = e.created_at.timestamp(); // Get the dateTime in Unix Time format
+            // let dateTime_var: u64 = dateTime_var.unsigned_abs(); // Convert to u64 FIXME: Not sure if this destroys / alters date data
+            let convo_id = _key.clone();
 
+            let m = Messages {
+                message_id: e.id.to_string(),
+                created_at: e.created_at,
+                sender_id: e.sender_id,
+                recipient_id: e.recipient_id,
+                sender_screen_name: s_name, 
+                recipient_screen_name: recipient_name,
+                conversation_id: convo_id, 
+                text: e.text.clone(),
+            };
+            // println!( "Message data structure == {:?}\n", m ); 
+            // user_token.sqlite_connection.execute( 
+            //     "INSERT INTO direct_messages 
+            //     (message_id, created_at, sender_id, recipient_id, sender_screen_name, recipient_screen_name, conversation_id, text)
+            //     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            //     params![ m.message_id, 
+            //             m.created_at , 
+            //             m.sender_id, 
+            //             m.recipient_id, 
+            //             m.sender_screen_name, 
+            //             m.recipient_screen_name, 
+            //             m.conversation_id, 
+            //             m.text ],
+            // )?;
+            
             user_token.sqlite_connection.execute(
                 "INSERT INTO direct_messages (
                     message_id, created_at, sender_id, recipient_id, sender_sn, recipient_sn, convo_id, message_text) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                     params![ 
-                        &e.id.to_string(), // message_id 
-                        &dateTime_var, // created_at  
-                        &e.sender_id, // sender_id
-                        &e.recipient_id, // recipient_id 
-                        &s_name, // Screen name
-                        &recipient_name, // recipient screen name 
-                        &_key.to_string(), // convo_id 
-                        &text, // message text  
+                        &m.message_id, // message_id 
+                        &m.created_at, // created_at  
+                        &m.sender_id, // sender_id
+                        &m.recipient_id, // recipient_id 
+                        &m.sender_screen_name, // Screen name
+                        &m.recipient_screen_name, // recipient screen name 
+                        &_key, // convo_id 
+                        &m.text, // message text  
                         ])?;
         }
     }
@@ -120,7 +144,7 @@ pub async fn get_direct_messages( user_token: &Users ) -> Result<()> {
 
 
 /// Gets an account object by username.
-pub async fn get_account_by_name( username: String, user_token: &Users ) -> TwitterUser {
+pub async fn _get_account_by_name( username: String, user_token: &Users ) -> TwitterUser {
 
     let user = egg_mode::user::show( username, &user_token.token ).await.unwrap();
     return user.response;
@@ -134,7 +158,7 @@ pub async fn get_account_by_id( user_id: u64, user_token: &Users ) -> TwitterUse
 }
 
 /// Send a Tweet, currently sends TEXT ONLY 
-pub async fn send_tweet( text: String, user_token: &Users ) {
+pub async fn _send_tweet( text: String, user_token: &Users ) {
     let _post = egg_mode::tweet::DraftTweet::new( text ).send( &user_token.token ).await;
 }
 
@@ -153,7 +177,7 @@ pub async fn _get_last_tweet(user_id: u64, user_token: &Users ) -> u64 {
 /// unable to verify the recipient's ability to recieve request DM beforehanbd.
 /// FIXME: Do you want to return the same signature as egg_mode? e.g., Result<Response<directMessage>, error>
 /// FIXME: This should update your database --> an INSERT statment
-pub async fn send_DM( text: String, recipient_id: u64, user_token: &Users ) {
+pub async fn _send_dm( text: String, recipient_id: u64, user_token: &Users ) {
     
     let _message = egg_mode::direct::DraftMessage::new( text, UserID::ID(recipient_id)).send( &user_token.token ).await;
     match _message {

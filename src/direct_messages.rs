@@ -2,10 +2,10 @@ use egg_mode;
 use egg_mode::tweet::TweetSource; 
 // use egg_mode::direct::DirectMessage; 
 use chrono::{ DateTime, Utc }; 
-
+#[derive(Debug)]
 pub struct Messages {
 
-    pub message_id: u64,
+    pub message_id: String,
     pub created_at: DateTime<Utc>,
     pub sender_id: u64,
     pub recipient_id: u64,
@@ -16,8 +16,8 @@ pub struct Messages {
 }
 
 impl Messages {
-    pub fn new( 
-                message_id: u64, 
+    pub fn _new( 
+                message_id: String, 
                 created_at: DateTime<Utc>,
                 sender_id: u64,
                 recipient_id: u64, 
