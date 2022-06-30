@@ -104,14 +104,14 @@ pub async fn get_direct_messages( user_token: &Users ) -> Result<()> {
                 "INSERT INTO direct_messages (
                     message_id, created_at, sender_id, recipient_id, sender_sn, recipient_sn, convo_id, message_text) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                     params![ 
-                        &e.id.to_string(), 
-                        &dateTime_var, 
-                        &e.sender_id,
-                        &e.recipient_id,
+                        &e.id.to_string(), // message_id 
+                        &dateTime_var, // created_at  
+                        &e.sender_id, // sender_id
+                        &e.recipient_id, // recipient_id 
                         &s_name, // Screen name
                         &recipient_name, // recipient screen name 
-                        &_key.to_string(),
-                        &text,  
+                        &_key.to_string(), // convo_id 
+                        &text, // message text  
                         ])?;
         }
     }

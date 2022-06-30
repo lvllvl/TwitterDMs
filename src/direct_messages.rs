@@ -22,19 +22,20 @@ impl Messages {
                 sender_id: u64,
                 recipient_id: u64, 
                 sender_screen_name: String, 
-                recipient_screen_name: String, 
+                recipient_screen_name: String,
+                conversation_id: u64, 
                 text: String, 
             ) -> Self {
 
         Messages {
             message_id: message_id,
             created_at: created_at,
-            text: text,
             sender_id: sender_id,
-            sender_screen_name: sender_screen_name,
-            source_app: source_app,
             recipient_id: recipient_id,
+            sender_screen_name: sender_screen_name,
             recipient_screen_name: recipient_screen_name,
+            conversation_id: conversation_id,
+            text: text,
         }
 
     }

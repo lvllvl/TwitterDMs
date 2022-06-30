@@ -248,10 +248,25 @@ async fn main() -> Result<()> {
 /// FIXME: pull messages from database 
 fn read_db( conn: &Connection ) -> Result<Vec<String>> {
 
-    let mut stmt = conn.prepare( 
-        "SELECT * FROM direct_messages dms
-        ORDER BY dms.convo_id"
-         )?;
+    let mut stmt = conn.prepare( "SELECT * FROM direct_messages")?;
+    let message_iter = stmt.query_map( [], | row | {
+
+        Ok( direct_messages::Messages{
+                message_id: row.get( 0 )?,
+                created_at: row.get( 1 )?,
+                sender_id: row.get( 2 )?,
+                recipient_id: row.get( 3 )? ,
+                sender_screen_name: row.get( 4 )?,
+                recipient_screen_name: row.get( 5 )?,
+                conversation_id: row.get( 6 )?,
+                text: row.get( 7 )?,
+        })
+    })?; 
+
+    // let mut stmt = conn.prepare( 
+    //     "SELECT * FROM direct_messages dms
+    //     ORDER BY dms.convo_id"
+    //      )?;
 
     let mut rows = stmt.query( [] )?;
     println!( "Type of Rows == {}", twitter_api::type_of( &rows )); 

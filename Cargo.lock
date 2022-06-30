@@ -1024,6 +1024,7 @@ dependencies = [
  "hashlink",
  "libsqlite3-sys",
  "memchr",
+ "serde_json",
  "smallvec",
 ]
 
