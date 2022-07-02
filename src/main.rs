@@ -87,7 +87,7 @@ async fn main() -> Result<()> {
 
 
     // FIXME: get conversation ID, send the convo_id in the signature 
-    // twitter_api::_send_dm(String::from( "10:58, Saturday another test!" ), request_auth.user_id, &request_auth).await; // Send a DM
+    twitter_api::_send_dm(String::from( "12:49, Saturday another test!" ), request_auth.user_id, &request_auth).await; // Send a DM
     // println!( "TEST: get_convo_id_by_recipient_id method == {:?}", twitter_api::get_convo_id_by_recipient_id( &request_auth ,  request_auth.user_id) ); 
     // let twitter_user = twitter_api::get_account_by_id( request_auth.user_id,  &request_auth ).await; // test unwrap Twitter User struct  
 
