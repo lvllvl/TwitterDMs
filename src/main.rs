@@ -70,11 +70,25 @@ async fn main() -> Result<()> {
     let request_auth: std::result::Result< users::Users, Box<dyn std::error::Error>> = request_auth.await;
     let request_auth = request_auth.unwrap(); // Get token, user_id, screen_name, sqlite connection
     let _messages = twitter_api::get_direct_messages( &request_auth ).await;  // Get all messages
+    let _dms_list = read_db( &request_auth.sqlite_connection );  // Get all messages from database
 
-    let d = read_db( &request_auth.sqlite_connection ); 
-    println!( "{:?}", d );  
+    // TODO: Convert this to a test 
+    // let test_dm = direct_messages::Messages::_new( 
+    //    "1234452456".to_string(), 
+    //    chrono::prelude::Utc::now(), 
+    //    012332423, 
+    //    34509425, 
+    //    "fake_sender".to_string(), 
+    //    "fake_recipient".to_string(), 
+    //    1234567, 
+    //    "FAKE FAKE FAKE FAKE!!!".to_string());
+    // println!( "INSERT == {:?}", twitter_api::insert_new_message_db( test_dm ,  &request_auth ).unwrap() ) ;
+   
 
-    // twitter_api::send_DM(String::from( "2 This is a test" ), request_auth.user_id, &request_auth).await; // Send a DM
+
+    // FIXME: get conversation ID, send the convo_id in the signature 
+    // twitter_api::_send_dm(String::from( "10:58, Saturday another test!" ), request_auth.user_id, &request_auth).await; // Send a DM
+    // println!( "TEST: get_convo_id_by_recipient_id method == {:?}", twitter_api::get_convo_id_by_recipient_id( &request_auth ,  request_auth.user_id) ); 
     // let twitter_user = twitter_api::get_account_by_id( request_auth.user_id,  &request_auth ).await; // test unwrap Twitter User struct  
 
     // Setup Terminal
@@ -246,7 +260,7 @@ async fn main() -> Result<()> {
 
 /// Pull message information from the database 
 fn read_db( conn: &Connection ) -> Result<Vec<direct_messages::Messages>> {
-    println!( "read_db function starting...\n");
+    // println!( "read_db function starting...\n");
     let mut stmt = conn.prepare( "SELECT * FROM direct_messages ORDER BY convo_id")?;
     let message_iter = stmt.query_map( [], | row | {
 

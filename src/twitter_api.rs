@@ -95,8 +95,6 @@ pub async fn get_direct_messages( user_token: &Users ) -> Result<()> {
 
             let s_name: String = get_account_by_id( e.sender_id, &user_token ).await.screen_name; // Get sender information 
             let recipient_name: String = get_account_by_id( e.recipient_id, &user_token ).await.screen_name; 
-            // let dateTime_var: i64 = e.created_at.timestamp(); // Get the dateTime in Unix Time format
-            // let dateTime_var: u64 = dateTime_var.unsigned_abs(); // Convert to u64 FIXME: Not sure if this destroys / alters date data
             let convo_id = _key.clone();
 
             let m = Messages {
@@ -176,12 +174,93 @@ pub async fn _get_last_tweet(user_id: u64, user_token: &Users ) -> u64 {
 /// Latter setting has no visibility on API. There may be situations where you are
 /// unable to verify the recipient's ability to recieve request DM beforehanbd.
 /// FIXME: Do you want to return the same signature as egg_mode? e.g., Result<Response<directMessage>, error>
-/// FIXME: This should update your database --> an INSERT statment
-pub async fn _send_dm( text: String, recipient_id: u64, user_token: &Users ) {
-    
+pub async fn _send_dm( text: String, recipient_id: u64, user_token: &Users ) -> Result<()> {
+   
+    // Include the conversation id in the signature !!! 
     let _message = egg_mode::direct::DraftMessage::new( text, UserID::ID(recipient_id)).send( &user_token.token ).await;
-    match _message {
-        Err(e) => println!("{}", e ),  
-        Ok(_) => println!("Direct Message was sent!" ),   
-    };
+    for m in _message {
+        println!( "New part of _message: {:?}\n", m ); 
+
+        let recipient_name: String = get_account_by_id( m.recipient_id, &user_token ).await.screen_name; 
+        let sender_screen_name = user_token.screen_name.clone(); 
+        let msg_text = m.text.clone(); 
+        
+        // Get conversation Id ... IF it exists 
+        let convo_id2: u64 = get_convo_id_by_recipient_id( &user_token,  recipient_id ).unwrap();
+
+        let one_msg = Messages::_new( 
+            m.id.to_string(),
+            m.created_at, 
+            user_token.user_id,
+            recipient_id,
+            sender_screen_name,
+            recipient_name,
+            convo_id2,
+            msg_text,
+        );
+
+        // Insert new convo into database 
+        insert_new_message_db( one_msg , &user_token ).unwrap()  
+                    } 
+        Ok(())
 }
+
+
+pub fn insert_new_message_db( one_msg: Messages, user_token: &Users ) -> Result<()> {
+
+        user_token.sqlite_connection.execute( 
+            "INSERT INTO direct_messages (message_id, created_at, sender_id, recipient_id, sender_sn, recipient_sn, convo_id, message_text)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)", 
+            params![    &one_msg.message_id, 
+                        &one_msg.created_at, 
+                        &one_msg.sender_id, 
+                        &one_msg.recipient_id, 
+                        &one_msg.sender_screen_name, 
+                        &one_msg.recipient_screen_name, 
+                        &one_msg.conversation_id, 
+                        &one_msg.text])?;
+                     
+        println!( "INSERT statement successful?");
+
+        Ok(())
+}
+
+/// Get conversation ID by search for a row with the recipient ID / recipient screen name 
+/// FIXME: Take into account that the conversation may NOT exist, i.e., user starts a NEW conversation
+pub fn get_convo_id_by_recipient_id( user_token: &Users, recipient_id: u64 ) -> Result<u64> {
+    
+    // let r_id: u64 = recipient_id; 
+
+    let mut stmt = user_token.sqlite_connection.prepare( 
+        "SELECT * FROM direct_messages WHERE recipient_id=:recipient_id;")?;
+    // let message_iter = stmt.query_map( params![":recipient_id", recipient_id.to_string().as_str()], | row | {
+    let message_iter = stmt.query_map( params![ recipient_id.to_string().as_str() ], | row | {
+
+        Ok( Messages{
+                message_id: row.get( 0 )?,
+                created_at: row.get( 1 )?,
+                sender_id: row.get( 2 )?,
+                recipient_id: row.get( 3 )? ,
+                sender_screen_name: row.get( 4 )?,
+                recipient_screen_name: row.get( 5 )?,
+                conversation_id: row.get( 6 )?,
+                text: row.get( 7 )?,
+        })
+    })?; 
+
+    println!( "PAST -> Select statement");
+    let mut ans = Vec::new(); 
+    for message in message_iter {
+        for m in message {
+            ans.push( m.conversation_id );
+            break
+        }
+        break
+    }
+
+    Ok( ans[0] )
+}
+
+// How to find a convo_id?
+// save DirectMessages HashMap<> 
+// Select statement find a row where recipient_id matches 
