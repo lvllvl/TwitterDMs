@@ -1,12 +1,12 @@
 // use egg_mode::Token;
 use egg_mode::user::{UserID, TwitterUser};
 // use egg_mode::tweet::Tweet;
-use egg_mode::direct::{ DraftMessage, DirectMessage }; 
+// use egg_mode::direct::{ DraftMessage, DirectMessage }; 
 use rusqlite::{ Connection, Result, params }; 
 // use rusqlite::NO_PARAMS; 
 
 // use http::{Response}; 
-use std::io; 
+use std::{io, collections::HashMap}; 
 use crate::config::Config;
 use crate::users::Users;
 // use crate::error; 
@@ -14,7 +14,7 @@ use crate::direct_messages::Messages;
 
 /// Ask user to authorize this application. Save token, user_id, and screen_name as global variables.  
 /// Start the database
-pub async fn requesting_user_authorization() -> Result<Users, Box< dyn std::error::Error>> {
+pub async fn requesting_user_authorization( connection: &rusqlite::Connection ) -> Result<Users, Box< dyn std::error::Error>> {
     
     let config = Config::new();
     let con_token = egg_mode::KeyPair::new( config.twitter_consumer_key,  config.twitter_consumer_secret ); 
@@ -44,7 +44,7 @@ pub async fn requesting_user_authorization() -> Result<Users, Box< dyn std::erro
     
     // Create the database SQLite
     // let connection = sqlite::open(":memory:").unwrap(); // Create a SQLite table
-    let connection = rusqlite::Connection::open("direct_messages.db")?; // Create a SQLite table
+    // let connection = rusqlite::Connection::open("direct_messages.db")?; // Create a SQLite table
     connection.execute(
             "
             CREATE TABLE IF NOT EXISTS direct_messages 
@@ -63,7 +63,7 @@ pub async fn requesting_user_authorization() -> Result<Users, Box< dyn std::erro
         )
         .unwrap();
 
-    let mut _user_info = Users::new( token, user_id, screen_name, connection); 
+    let mut _user_info = Users::new( token, user_id, screen_name ); 
     Ok( _user_info )
 }
 
@@ -75,28 +75,26 @@ pub fn _type_of<T>( _: T ) -> &'static str {
 
 /// Get most recent 50 direct messages associated with a specific user
 /// from the last 30 days. FIXME: Find out how to get more messages from a user's account.
-pub async fn get_direct_messages( user_token: &Users ) -> Result<()> {
+pub async fn get_direct_messages( user_token: &Users, connection: &Connection, message_list: &mut HashMap< u64, u64>  ) -> Result<()> {
 
-    let mut friends_screen_names = std::collections::HashMap::new();
-    friends_screen_names.insert( user_token.user_id,  &user_token.screen_name ); 
-
-    let mut timeline = egg_mode::direct::list( &user_token.token ).with_page_size( 50 ); // Get all message, org'd by conversation 
+    // let mut friends_screen_names = HashMap::new();
+    // friends_screen_names.insert( user_token.user_id,  &user_token.screen_name ); 
+    let timeline = egg_mode::direct::list( &user_token.token ).with_page_size( 50 ); // Get all message, org'd by conversation 
        
     // HashMap<key,value>, key = Unique convo, value = arr[ messages from convo ] arr[0] == Newest message
-    let mut messages = timeline.into_conversations().await.unwrap();
-    let convo_keys = messages.keys();
-    println!( "convo_keys: {:?}", convo_keys ); // TODO: delete this !  
+    let messages = timeline.into_conversations().await.unwrap();
 
     // Iterate over hashMap keys, sub-loop iterates over messages ( an array of DirectMessage structs )
-    for ( _key, val ) in &messages { // Add messages to database
-        // println!( "Type of _key: {}", type_of( _key ) ); // TODO: delete this ...  Type = &u64
+    for ( _key, val ) in messages { // Add messages to database
 
-        for ( _pos, e ) in val.iter().enumerate() { 
+        for ( _pos, e ) in val.into_iter().enumerate() { 
 
             let s_name: String = get_account_by_id( e.sender_id, &user_token ).await.screen_name; // Get sender information 
             let recipient_name: String = get_account_by_id( e.recipient_id, &user_token ).await.screen_name; 
             let convo_id = _key.clone();
-
+            let msg_id = e.id.clone(); 
+            
+            message_list.insert( msg_id, 1 );  // Add a copy of all message IDs into HashMap
             let m = Messages {
                 message_id: e.id.to_string(),
                 created_at: e.created_at,
@@ -107,22 +105,8 @@ pub async fn get_direct_messages( user_token: &Users ) -> Result<()> {
                 conversation_id: convo_id, 
                 text: e.text.clone(),
             };
-            // println!( "Message data structure == {:?}\n", m ); 
-            // user_token.sqlite_connection.execute( 
-            //     "INSERT INTO direct_messages 
-            //     (message_id, created_at, sender_id, recipient_id, sender_screen_name, recipient_screen_name, conversation_id, text)
-            //     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            //     params![ m.message_id, 
-            //             m.created_at , 
-            //             m.sender_id, 
-            //             m.recipient_id, 
-            //             m.sender_screen_name, 
-            //             m.recipient_screen_name, 
-            //             m.conversation_id, 
-            //             m.text ],
-            // )?;
             
-            user_token.sqlite_connection.execute(
+            connection.execute(
                 "INSERT INTO direct_messages (
                     message_id, created_at, sender_id, recipient_id, sender_sn, recipient_sn, convo_id, message_text) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                     params![ 
@@ -139,6 +123,62 @@ pub async fn get_direct_messages( user_token: &Users ) -> Result<()> {
     }
     Ok(())
 }
+
+/// Update messages periodically within your database in order to update your UI
+/// Use the egg_mode::into_conversations method to retrieve all recent messages.
+/// Messages are returned from newest to oldest. 
+/// Check message IDs to see if the message already exists in DB. If yes, then break and end function.
+pub async fn update_direct_messages( user_token: &Users, connection: &Connection, message_list: &mut HashMap< u64, u64>  ) -> Result<()> {
+    
+    // let mut friends_screen_names = HashMap::new();
+    // friends_screen_names.insert( user_token.user_id,  &user_token.screen_name ); 
+    let timeline = egg_mode::direct::list( &user_token.token ).with_page_size( 50 ); // Get all message, org'd by conversation 
+    // HashMap<key,value>, key = Unique convo, value = arr[ messages from convo ] arr[0] == Newest message
+    let messages = timeline.into_conversations().await.unwrap();
+
+    for ( _key, val ) in messages { // Add messages to database
+        for ( _pos, e ) in val.into_iter().enumerate() { 
+
+            let s_name: String = get_account_by_id( e.sender_id, &user_token ).await.screen_name; // Get sender information 
+            let recipient_name: String = get_account_by_id( e.recipient_id, &user_token ).await.screen_name; 
+            let convo_id = _key.clone();
+            let msg_id = e.id.clone(); 
+           
+            if message_list.contains_key( &msg_id ) { // Check if message already exists in SQLite DB
+                println!( "Message found within database already. Breaking this loop.");
+                break
+            } else {
+                message_list.insert( msg_id, 1 );  // Add a copy of all message IDs into HashMap
+                let m = Messages {
+                    message_id: e.id.to_string(),
+                    created_at: e.created_at,
+                    sender_id: e.sender_id,
+                    recipient_id: e.recipient_id,
+                    sender_screen_name: s_name, 
+                    recipient_screen_name: recipient_name,
+                    conversation_id: convo_id, 
+                    text: e.text.clone(),
+                };
+
+                connection.execute(
+                    "INSERT INTO direct_messages (
+                        message_id, created_at, sender_id, recipient_id, sender_sn, recipient_sn, convo_id, message_text) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                        params![ 
+                            &m.message_id, // message_id 
+                            &m.created_at, // created_at  
+                            &m.sender_id, // sender_id
+                            &m.recipient_id, // recipient_id 
+                            &m.sender_screen_name, // Screen name
+                            &m.recipient_screen_name, // recipient screen name 
+                            &_key, // convo_id 
+                            &m.text, // message text  
+                            ])?;
+            }
+        }
+    }
+    Ok(())
+}
+
 
 
 /// Gets an account object by username.
@@ -174,41 +214,41 @@ pub async fn _get_last_tweet(user_id: u64, user_token: &Users ) -> u64 {
 /// Latter setting has no visibility on API. There may be situations where you are
 /// unable to verify the recipient's ability to recieve request DM beforehanbd.
 /// FIXME: Do you want to return the same signature as egg_mode? e.g., Result<Response<directMessage>, error>
-pub async fn _send_dm( text: String, recipient_id: u64, user_token: &Users ) -> Result<()> {
+pub async fn _send_dm( text: String, recipient_id: u64, user_token: &Users, connection: &Connection ) -> Result<()> {
    
     // Include the conversation id in the signature !!! 
     let _message = egg_mode::direct::DraftMessage::new( text, UserID::ID(recipient_id)).send( &user_token.token ).await;
     for m in _message {
-        println!( "New part of _message: {:?}\n", m ); 
 
         let recipient_name: String = get_account_by_id( m.recipient_id, &user_token ).await.screen_name; 
         let sender_screen_name = user_token.screen_name.clone(); 
         let msg_text = m.text.clone(); 
         
         // Get conversation Id ... IF it exists 
-        let convo_id2: u64 = get_convo_id_by_recipient_id( &user_token,  recipient_id ).unwrap();
+        let convo_id2: u64 = get_convo_id_by_recipient_id( &user_token,  recipient_id, connection ).unwrap();
 
         let one_msg = Messages::_new( 
             m.id.to_string(),
             m.created_at, 
             user_token.user_id,
             recipient_id,
-            sender_screen_name,
+            sender_screen_name.to_string(),
             recipient_name,
             convo_id2,
             msg_text,
         );
 
         // Insert new convo into database 
-        insert_new_message_db( one_msg , &user_token ).unwrap()  
+        insert_new_message_db( one_msg , &connection ).unwrap()  
                     } 
         Ok(())
 }
 
+/// Get a Message struct and insert the new message into the SQLite database
+/// FIXME: currently only works for SENT message only, not recieved messages 
+pub fn insert_new_message_db( one_msg: Messages, connection: &Connection) -> Result<()> {
 
-pub fn insert_new_message_db( one_msg: Messages, user_token: &Users ) -> Result<()> {
-
-        user_token.sqlite_connection.execute( 
+        connection.execute( 
             "INSERT INTO direct_messages (message_id, created_at, sender_id, recipient_id, sender_sn, recipient_sn, convo_id, message_text)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)", 
             params![    &one_msg.message_id, 
@@ -220,18 +260,16 @@ pub fn insert_new_message_db( one_msg: Messages, user_token: &Users ) -> Result<
                         &one_msg.conversation_id, 
                         &one_msg.text])?;
                      
-        println!( "INSERT statement successful?");
-
         Ok(())
 }
 
 /// Get conversation ID by search for a row with the recipient ID / recipient screen name 
 /// FIXME: Take into account that the conversation may NOT exist, i.e., user starts a NEW conversation
-pub fn get_convo_id_by_recipient_id( user_token: &Users, recipient_id: u64 ) -> Result<u64> {
+pub fn get_convo_id_by_recipient_id( user_token: &Users, recipient_id: u64, connection: &Connection ) -> Result<u64> {
     
     // let r_id: u64 = recipient_id; 
 
-    let mut stmt = user_token.sqlite_connection.prepare( 
+    let mut stmt = connection.prepare( 
         "SELECT * FROM direct_messages WHERE recipient_id=:recipient_id;")?;
     // let message_iter = stmt.query_map( params![":recipient_id", recipient_id.to_string().as_str()], | row | {
     let message_iter = stmt.query_map( params![ recipient_id.to_string().as_str() ], | row | {
@@ -248,7 +286,6 @@ pub fn get_convo_id_by_recipient_id( user_token: &Users, recipient_id: u64 ) -> 
         })
     })?; 
 
-    println!( "PAST -> Select statement");
     let mut ans = Vec::new(); 
     for message in message_iter {
         for m in message {
@@ -260,7 +297,3 @@ pub fn get_convo_id_by_recipient_id( user_token: &Users, recipient_id: u64 ) -> 
 
     Ok( ans[0] )
 }
-
-// How to find a convo_id?
-// save DirectMessages HashMap<> 
-// Select statement find a row where recipient_id matches 

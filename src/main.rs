@@ -4,6 +4,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use std::collections::HashMap;
 use futures::executor::block_on; 
 use chrono::{DateTime, Utc};
 use serde::{ Deserialize, Serialize }; 
@@ -29,12 +30,10 @@ use tui::{
 
 // use egg_mode::{ Response };
 // use futures::stream::TryStreamExt;
-
 mod users; 
 mod config; 
 mod twitter_api; 
 mod direct_messages;
-mod error;  
 
 // FIXME: Delete the database after each session
 // const DB_PATH: &str = "./direct_messages.db";
@@ -64,13 +63,21 @@ impl From<MenuItem> for usize {
 
 #[ tokio::main ]
 async fn main() -> Result<()> {
+
+    let connection = rusqlite::Connection::open("direct_messages.db")?; // Create a SQLite table
+    let mut friends_list = HashMap::new();
+    let mut message_list: HashMap<u64, u64> = HashMap::new();
+    message_list.insert( 123456, 123456 ); // <k, v> == message_id, count_num, keep track of all messages recieved 
     
     // Get authorization, then organize messages   
-    let request_auth = twitter_api::requesting_user_authorization(); 
+    let request_auth = twitter_api::requesting_user_authorization( &connection ); 
     let request_auth: std::result::Result< users::Users, Box<dyn std::error::Error>> = request_auth.await;
     let request_auth = request_auth.unwrap(); // Get token, user_id, screen_name, sqlite connection
-    let _messages = twitter_api::get_direct_messages( &request_auth ).await;  // Get all messages
-    let _dms_list = read_db( &request_auth.sqlite_connection );  // Get all messages from database
+
+    friends_list.insert( request_auth.user_id.clone(), request_auth.screen_name.clone() ); 
+
+    let _messages = twitter_api::get_direct_messages( &request_auth, &connection, &mut message_list ).await;  // Get all messages
+    let _dms_list = read_db( &connection );  // Get all messages from database
 
     // TODO: Convert this to a test 
     // let test_dm = direct_messages::Messages::_new( 
@@ -83,13 +90,11 @@ async fn main() -> Result<()> {
     //    1234567, 
     //    "FAKE FAKE FAKE FAKE!!!".to_string());
     // println!( "INSERT == {:?}", twitter_api::insert_new_message_db( test_dm ,  &request_auth ).unwrap() ) ;
-   
 
 
     // FIXME: get conversation ID, send the convo_id in the signature 
-    twitter_api::_send_dm(String::from( "12:49, Saturday another test!" ), request_auth.user_id, &request_auth).await; // Send a DM
-    // println!( "TEST: get_convo_id_by_recipient_id method == {:?}", twitter_api::get_convo_id_by_recipient_id( &request_auth ,  request_auth.user_id) ); 
-    // let twitter_user = twitter_api::get_account_by_id( request_auth.user_id,  &request_auth ).await; // test unwrap Twitter User struct  
+    twitter_api::_send_dm(String::from( "1:41, Monday another test!" ), request_auth.user_id, &request_auth, &connection ).await.unwrap(); // Send a DM
+    twitter_api::update_direct_messages( &request_auth, &connection, &mut message_list).await.unwrap(); 
 
     // Setup Terminal
     // enable_raw_mode().expect("Can run in raw mode");
