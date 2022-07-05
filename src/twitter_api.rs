@@ -297,3 +297,58 @@ pub fn get_convo_id_by_recipient_id( user_token: &Users, recipient_id: u64, conn
 
     Ok( ans[0] )
 }
+
+/// Get all unique screen names in the SQLite database, return a vector 
+pub fn get_all_screen_names_from_dms( user_token: &Users, connection: &Connection ) -> Result< Vec<String> > {
+
+    // Check all of the sender screen names
+    let mut stmt = connection.prepare( 
+        "SELECT sender_sn FROM direct_messages")?;
+    let message_iter = stmt.query_map( [], | row | {
+
+        Ok( Messages{
+                message_id: row.get( 0 )?,
+                created_at: row.get( 1 )?,
+                sender_id: row.get( 2 )?,
+                recipient_id: row.get( 3 )? ,
+                sender_screen_name: row.get( 4 )?,
+                recipient_screen_name: row.get( 5 )?,
+                conversation_id: row.get( 6 )?,
+                text: row.get( 7 )?,
+        })
+    })?; 
+    
+    // Check all of recipient screen names 
+    let mut stmt_2 = connection.prepare( 
+        "SELECT recipient_sn FROM direct_messages")?;
+    let recipient_iter = stmt_2.query_map( [], | row | {
+
+        Ok( Messages{
+                message_id: row.get( 0 )?,
+                created_at: row.get( 1 )?,
+                sender_id: row.get( 2 )?,
+                recipient_id: row.get( 3 )? ,
+                sender_screen_name: row.get( 4 )?,
+                recipient_screen_name: row.get( 5 )?,
+                conversation_id: row.get( 6 )?,
+                text: row.get( 7 )?,
+        })
+    })?;
+
+    let mut hash_ans = HashMap::new(); // Create a hash map, collect unique keys only 
+    for mess in message_iter { // iterate over sender screen names 
+        for m in mess {
+            hash_ans.insert( m.sender_screen_name, 1 ); 
+        }
+    }
+
+    for recipient in recipient_iter { // iterate over recipient screen names
+        for r in recipient {
+            hash_ans.insert( r.recipient_screen_name, 1 ); 
+        }
+    }
+
+    // Conver HashMap to vector 
+    let ans = hash_ans.keys().cloned().collect::<Vec<String>>();
+    Ok( ans )
+}
