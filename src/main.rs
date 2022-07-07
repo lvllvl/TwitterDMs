@@ -135,8 +135,8 @@ async fn main() -> Result<()> {
 
     let menu_titles = vec!["Home", "DMs", "Add-Send DM", "Delete-", "Quit"]; // TODO: get all screen names from DMs
     let mut active_menu_item = MenuItem::Home; // TODO: update based on your Menu Item 
-    let mut pet_list_state = ListState::default(); // What is this for?
-    pet_list_state.select(Some(0)); // ?
+    let mut dm_list_state = ListState::default(); 
+    dm_list_state.select(Some(0));
 
     loop {
         terminal.draw(|rect| {
@@ -198,8 +198,8 @@ async fn main() -> Result<()> {
                             [Constraint::Percentage(20), Constraint::Percentage(80)].as_ref(),
                         )
                         .split(chunks[1]);
-                    let (left, right) = render_pets(&pet_list_state, &connection );
-                    rect.render_stateful_widget(left, pets_chunks[0], &mut pet_list_state);
+                    let (left, right) = render_pets( &dm_list_state, &connection, &request_auth );
+                    rect.render_stateful_widget(left, pets_chunks[0], &mut dm_list_state);
                     rect.render_widget(right, pets_chunks[1]);
                 },
                 MenuItem::EnterTextMessage=> rect.render_widget(render_home(), chunks[1]),
@@ -223,26 +223,26 @@ async fn main() -> Result<()> {
                 println!("Figure out what to do with this !")
             }
             KeyCode::Char('d') => {
-                // remove_pet_at_index(&mut pet_list_state).expect("can remove pet");
+                // remove_pet_at_index(&mut dm_list_state).expect("can remove pet");
                 println!("Figure out what to do with this !")
             }
             KeyCode::Down => {
-                if let Some(selected) = pet_list_state.selected() {
+                if let Some(selected) = dm_list_state.selected() {
                     let amount_pets = read_db( &connection ).expect("can fetch pet list").len();
                     if selected >= amount_pets - 1 {
-                        pet_list_state.select(Some(0));
+                        dm_list_state.select(Some(0));
                     } else {
-                        pet_list_state.select(Some(selected + 1));
+                        dm_list_state.select(Some(selected + 1));
                     }
                 }
             }
             KeyCode::Up => {
-                if let Some(selected) = pet_list_state.selected() {
+                if let Some(selected) = dm_list_state.selected() {
                     let amount_pets = read_db( &connection ).expect("can fetch pet list").len();
                     if selected > 0 {
-                        pet_list_state.select(Some(selected - 1));
+                        dm_list_state.select(Some(selected - 1));
                     } else {
-                        pet_list_state.select(Some(amount_pets - 1));
+                        dm_list_state.select(Some(amount_pets - 1));
                     }
                 }
             }
@@ -330,9 +330,13 @@ fn render_home<'a>() -> Paragraph<'a> {
 }
 
 /// Pull message information from the database 
-fn read_db( conn: &Connection ) -> Result<HashMap<u64, Vec<direct_messages::Messages>>> {
+/// Deliver a HashMap with:
+/// Keys = conversation_IDs
+/// Values = Vec[ Messages ] 
+fn read_db( conn: &Connection ) -> Result<HashMap<u64, Vec< direct_messages::Messages>>> {
     
-    let mut stmt = conn.prepare( "SELECT * FROM direct_messages ORDER BY convo_id")?;
+    // FIXME: You don't need to get all this info, collect only necessary info for Message struct
+    let mut stmt = conn.prepare( "SELECT * FROM direct_messages ORDER BY convo_id, created_at ASC")?;
     let message_iter = stmt.query_map( [], | row | {
 
         Ok( direct_messages::Messages{
@@ -350,15 +354,37 @@ fn read_db( conn: &Connection ) -> Result<HashMap<u64, Vec<direct_messages::Mess
     let mut convos_dict = HashMap::new(); 
 
     for message in message_iter {
-        let key = message.unwrap().conversation_id.clone(); 
-        convos_dict.entry( key ).or_insert( Vec::new() ).push( message.unwrap() ); 
+        let msg = message.unwrap();
+        let key = msg.conversation_id.clone(); 
+        convos_dict.entry( key ).or_insert( Vec::new() ).push( msg ); 
+        // convos_dict.entry( key ).or_insert( Vec::new() ).push( 
+        //     direct_messages::Messages::_new(
+        //         msg.message_id.clone(), 
+        //         msg.created_at, 
+        //         msg.sender_id, 
+        //         msg.recipient_id, 
+        //         msg.sender_screen_name.clone(), 
+        //         msg.recipient_screen_name.clone(), 
+        //         msg.conversation_id, 
+        //         msg.text.clone()
+        //     )
+        //  ); 
     }
-
     Ok( convos_dict ) 
 }
 
+// pub message_id: String,
+// pub created_at: DateTime<Utc>,
+// pub sender_id: u64,
+// pub recipient_id: u64,
+// pub sender_screen_name: String,
+// pub recipient_screen_name: String,
+// pub conversation_id: u64,
+// pub text: String,
+
 /// Prepare the direct messages to be displayed
-fn render_pets<'a>( dm_list_state: &ListState, connection: &Connection ) -> (List<'a>, Table<'a>) {
+fn render_pets<'a>( dm_list_state: &ListState, connection: &Connection, user_token: &users::Users ) -> (List<'a>, Table<'a>) {
+
     let dms = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::White))
@@ -366,60 +392,69 @@ fn render_pets<'a>( dm_list_state: &ListState, connection: &Connection ) -> (Lis
         .border_type(BorderType::Plain);
 
     let dm_list = read_db( connection ).expect("can fetch dm list");
+    // Get dm_list keys into a list of screen names
     let items: Vec<_> = dm_list
         .iter()
-        .map(|dm| {
-            ListItem::new(Spans::from(vec![Span::styled(
-                dm.sender_screen_name.clone(),
-                Style::default(),
+        .map( |dm| {
+            ListItem::new( Spans::from( vec![ Span::styled( 
+                twitter_api::get_sn_by_convo_id( user_token, connection, dm.0.clone() ).unwrap(), 
+                Style::default() 
             )]))
-        })
-        .collect();
-
-        // TODO: Find a new way to get all conversations organized HERE
-
+    }).collect();
+    
+    
     let selected_dm = dm_list
-        .get(
-            dm_list_state
-                .selected()
-                .expect("there is always a selected Direct Message"),
-        )
-        .expect("exists")
-        .clone();
-
+                .iter()
+                .map( |msg| {
+                    msg.1.get( 
+                        dm_list_state
+                            .selected()
+                            .expect( "there will always be a selected Direct Message"),
+                    )
+                    .expect( "exists")
+                    .clone();
+                } );
+    // let ans = hash_ans.keys().cloned().collect::<Vec<String>>();
+    // let dm_list_list = dm_list.keys().cloned().collect::<Vec<u64>>();
     let list = List::new(items).block(dms).highlight_style(
         Style::default()
             .bg(Color::LightRed)
             .fg(Color::Black)
             .add_modifier(Modifier::BOLD),
     );
+    // Table::new( 
+    //     vec![
+    //         Row::new( vec![ Cell::from( Span::raw( selected_pet.id.to_string() ))]), 
+    //         Row::new( vec![ Cell::from( Span::raw( selected_pet.id.to_string() ))])
+    //     ]
+    // );
 
-    let dm_detail = Table::new(vec![Row::new(vec![
-        Cell::from(Span::raw(selected_dm.text.to_string())),
-        Cell::from(Span::raw(selected_dm.sender_screen_name.clone())),
-        Cell::from(Span::raw(selected_dm.recipient_screen_name.clone())),
-        Cell::from(Span::raw(selected_dm.created_at.to_string())),
-        // Cell::from(Span::raw(selected_dm.created_at.to_string())),
+    let v1 = Vec::new();
+    for i in selected_dm {
+        i.sender_screen_name;
+
+        Cell::from(Span::raw( i.sender_screen_name ) );
+
+    }
+
+    let dm_detail = Table::new(
+        
+        vec![Row::new(vec![
+        Cell::from(Span::raw( selected_dm.sender_screen_name.clone() ) ),
+        Cell::from(Span::raw( selected_dm.created_at.to_string() ) ),
+        Cell::from(Span::raw( selected_dm.text.to_string() ) ),
     ])])
     .header(Row::new(vec![
         Cell::from(Span::styled(
-            "ID",
+            "screen name",
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Cell::from(Span::styled(
-            "Name",
+            "sent at",
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Cell::from(Span::styled(
-            "Category",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Cell::from(Span::styled(
-            "Age",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Cell::from(Span::styled(
-            "Created At",
+            "message",
             Style::default().add_modifier(Modifier::BOLD),
         )),
     ]))
@@ -431,11 +466,9 @@ fn render_pets<'a>( dm_list_state: &ListState, connection: &Connection ) -> (Lis
             .border_type(BorderType::Plain),
     )
     .widths(&[
-        Constraint::Percentage(5),
-        Constraint::Percentage(20),
-        Constraint::Percentage(20),
-        Constraint::Percentage(5),
-        Constraint::Percentage(20),
+        Constraint::Percentage(15),
+        Constraint::Percentage(15),
+        Constraint::Percentage(30),
     ]);
 
     (list, dm_detail)

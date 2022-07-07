@@ -1,9 +1,6 @@
-// use egg_mode; 
-// use egg_mode::tweet::TweetSource; 
-// use egg_mode::direct::DirectMessage; 
 use chrono::{ DateTime, Utc }; 
 
-#[derive(Debug)]
+#[derive( Debug, Clone )]
 pub struct Messages {
 
     pub message_id: String,

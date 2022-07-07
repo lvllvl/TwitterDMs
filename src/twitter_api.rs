@@ -338,17 +338,58 @@ pub fn get_all_screen_names_from_dms( user_token: &Users, connection: &Connectio
     let mut hash_ans = HashMap::new(); // Create a hash map, collect unique keys only 
     for mess in message_iter { // iterate over sender screen names 
         for m in mess {
-            hash_ans.insert( m.sender_screen_name, 1 ); 
+            hash_ans.entry( m.sender_screen_name ).or_insert( 1 ); 
+            // hash_ans.insert( m.sender_screen_name, 1 ); 
         }
     }
 
     for recipient in recipient_iter { // iterate over recipient screen names
         for r in recipient {
-            hash_ans.insert( r.recipient_screen_name, 1 ); 
+            hash_ans.entry( r.recipient_screen_name ).or_insert( 1 ); 
+            // hash_ans.insert( r.recipient_screen_name, 1 ); 
         }
     }
 
     // Conver HashMap to vector 
     let ans = hash_ans.keys().cloned().collect::<Vec<String>>();
     Ok( ans )
+}
+
+
+/// Get all unique screen names in the SQLite database, return a vector 
+// pub fn get_sn_by_convo_id( user_token: &Users, connection: &Connection, convo_id: u64 ) -> Result< ( u64, String ) > {
+pub fn get_sn_by_convo_id( user_token: &Users, connection: &Connection, convo_id: u64 ) -> Result< String > {
+
+    // Check all of the screen names associated with a given conversation ID 
+    let mut stmt = connection.prepare( 
+        "SELECT * FROM direct_messages WHERE convo_id=:convo_id")?;
+    let message_iter = stmt.query_map( params![ convo_id ], | row | {
+
+        Ok( Messages{
+                message_id: row.get( 0 )?,
+                created_at: row.get( 1 )?,
+                sender_id: row.get( 2 )?,
+                recipient_id: row.get( 3 )? ,
+                sender_screen_name: row.get( 4 )?,
+                recipient_screen_name: row.get( 5 )?,
+                conversation_id: row.get( 6 )?,
+                text: row.get( 7 )?,
+        })
+    })?; 
+    
+ // Check for a unique screen name that does not equal user_token.screen name 
+    let mut ans = Vec::new(); // Create a vector 
+    for mess in message_iter { // iterate over  
+        for m in mess {
+
+            if m.sender_screen_name == user_token.screen_name.to_string() {
+                ans.push(  m.recipient_screen_name  ); 
+            } else {
+
+                ans.push( m.sender_screen_name );
+            }
+            break
+        }
+    }
+    Ok( ans[0].clone() )
 }
