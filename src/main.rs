@@ -22,21 +22,17 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style },
     widgets::{
-        Block, Borders, BorderType, Cell, List, ListItem, ListState, Paragraph, Row, Table, Tabs
+        Block, Borders, BorderType, Cell, List, ListItem, ListState, Paragraph, Row, Table, Tabs, Wrap,
     },
     text::{ Span, Spans },
     Frame, Terminal,
 };
 
-// use egg_mode::{ Response };
-// use futures::stream::TryStreamExt;
 mod users; 
 mod config; 
 mod twitter_api; 
 mod direct_messages;
 
-// FIXME: Delete the database after each session
-// const DB_PATH: &str = "./direct_messages.db";
 // #[derive(Serialize, Deserialize, Clone)]
 // struct Pet {
 //     id: usize,
@@ -55,22 +51,22 @@ enum Event<I> {
 enum MenuItem {
     Home,
     DMs,
-    EnterTextMessage,
-    Tweeting,
+    // EnterTextMessage,
+    // Tweeting,
 }
 impl From<MenuItem> for usize {
     fn from( input: MenuItem ) -> usize {
         match input {
             MenuItem::Home => 0,
             MenuItem::DMs => 1, 
-            MenuItem::EnterTextMessage => 2, 
-            MenuItem::Tweeting => 3, 
+            // MenuItem::EnterTextMessage => 2, 
+            // MenuItem::Tweeting => 3, 
         }
     }
 }
 
 #[ tokio::main ]
-async fn main() -> Result<()> {
+async fn main() -> Result<()> { // FIXME: async / return values are different 
 
     let connection = rusqlite::Connection::open("direct_messages.db")?; // Create a SQLite table
     let mut friends_list = HashMap::new();
@@ -133,7 +129,7 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    let menu_titles = vec!["Home", "DMs", "Add-Send DM", "Delete-", "Quit"]; // TODO: get all screen names from DMs
+    let menu_titles = vec!["Home", "DMs", "Quit"]; 
     let mut active_menu_item = MenuItem::Home; // TODO: update based on your Menu Item 
     let mut dm_list_state = ListState::default(); 
     dm_list_state.select(Some(0));
@@ -195,15 +191,15 @@ async fn main() -> Result<()> {
                     let pets_chunks = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints(
-                            [Constraint::Percentage(20), Constraint::Percentage(80)].as_ref(),
+                            [Constraint::Percentage(10), Constraint::Percentage(90)].as_ref(),
                         )
                         .split(chunks[1]);
                     let (left, right) = render_pets( &dm_list_state, &connection, &request_auth );
                     rect.render_stateful_widget(left, pets_chunks[0], &mut dm_list_state);
                     rect.render_widget(right, pets_chunks[1]);
                 },
-                MenuItem::EnterTextMessage=> rect.render_widget(render_home(), chunks[1]),
-                MenuItem::Tweeting=> rect.render_widget(render_home(), chunks[1]),
+                // MenuItem::EnterTextMessage=> rect.render_widget(render_home(), chunks[1]),
+                // MenuItem::Tweeting=> rect.render_widget(render_home(), chunks[1]),
 
             }
             rect.render_widget(copyright, chunks[2]);
@@ -228,7 +224,7 @@ async fn main() -> Result<()> {
             }
             KeyCode::Down => {
                 if let Some(selected) = dm_list_state.selected() {
-                    let amount_pets = read_db( &connection ).expect("can fetch pet list").len();
+                    let amount_pets = read_db( &connection ).expect("can fetch dm list").len();
                     if selected >= amount_pets - 1 {
                         dm_list_state.select(Some(0));
                     } else {
@@ -238,7 +234,7 @@ async fn main() -> Result<()> {
             }
             KeyCode::Up => {
                 if let Some(selected) = dm_list_state.selected() {
-                    let amount_pets = read_db( &connection ).expect("can fetch pet list").len();
+                    let amount_pets = read_db( &connection ).expect("can fetch dm list").len();
                     if selected > 0 {
                         dm_list_state.select(Some(selected - 1));
                     } else {
@@ -373,14 +369,6 @@ fn read_db( conn: &Connection ) -> Result<HashMap<u64, Vec< direct_messages::Mes
     Ok( convos_dict ) 
 }
 
-// pub message_id: String,
-// pub created_at: DateTime<Utc>,
-// pub sender_id: u64,
-// pub recipient_id: u64,
-// pub sender_screen_name: String,
-// pub recipient_screen_name: String,
-// pub conversation_id: u64,
-// pub text: String,
 
 /// Prepare the direct messages to be displayed
 fn render_pets<'a>( dm_list_state: &ListState, connection: &Connection, user_token: &users::Users ) -> (List<'a>, Table<'a>) {
@@ -388,7 +376,7 @@ fn render_pets<'a>( dm_list_state: &ListState, connection: &Connection, user_tok
     let dms = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::White))
-        .title("Direct Messages")
+        .title("DMs")
         .border_type(BorderType::Plain);
 
     let dm_list = read_db( connection ).expect("can fetch dm list");
@@ -396,61 +384,56 @@ fn render_pets<'a>( dm_list_state: &ListState, connection: &Connection, user_tok
     let items: Vec<_> = dm_list
         .iter()
         .map( |dm| {
-            ListItem::new( Spans::from( vec![ Span::styled( 
+            ListItem::new( Spans::from( vec![ Span::styled(
+                // dm.0.to_string(), 
                 twitter_api::get_sn_by_convo_id( user_token, connection, dm.0.clone() ).unwrap(), 
                 Style::default() 
             )]))
     }).collect();
-    
-    
-    let selected_dm = dm_list
-                .iter()
-                .map( |msg| {
-                    msg.1.get( 
-                        dm_list_state
-                            .selected()
-                            .expect( "there will always be a selected Direct Message"),
-                    )
-                    .expect( "exists")
+
+    let keys = dm_list.keys().cloned().collect::<Vec< u64 >>();
+    let single_key = keys.get( dm_list_state.selected().expect( "something is always selcted"))
+                    .expect( "Exists" )
                     .clone();
-                } );
-    // let ans = hash_ans.keys().cloned().collect::<Vec<String>>();
-    // let dm_list_list = dm_list.keys().cloned().collect::<Vec<u64>>();
+    let selected_dms = dm_list.get( &single_key ).expect( "There is always a dm selected.");
+
     let list = List::new(items).block(dms).highlight_style(
         Style::default()
             .bg(Color::LightRed)
             .fg(Color::Black)
             .add_modifier(Modifier::BOLD),
     );
-    // Table::new( 
-    //     vec![
-    //         Row::new( vec![ Cell::from( Span::raw( selected_pet.id.to_string() ))]), 
-    //         Row::new( vec![ Cell::from( Span::raw( selected_pet.id.to_string() ))])
-    //     ]
-    // );
+    
+    let mut rows_vec = Vec::new();
+    for s_dms in selected_dms {
 
-    let v1 = Vec::new();
-    for i in selected_dm {
-        i.sender_screen_name;
 
-        Cell::from(Span::raw( i.sender_screen_name ) );
+       // FIXME: Figure out how to wrap text 
+       rows_vec.push(  // Blank row 
+        Row::new(vec![
+            Cell::from(Span::raw( String::from( "        ") ) ),
+            Cell::from(Span::raw( String::from( "        ") ) ),
+            Cell::from(Span::raw( String::from( "        ") ) ),
+            ])) ;
 
+       rows_vec.push( 
+        Row::new(vec![ // actual content for each row 
+            Cell::from(Span::raw( s_dms.sender_screen_name.clone() ) ),
+            Cell::from(Span::raw( s_dms.created_at.to_string() ) ),
+            Cell::from(Span::raw( s_dms.text.to_string() ) ),
+            ])) ;
     }
 
     let dm_detail = Table::new(
-        
-        vec![Row::new(vec![
-        Cell::from(Span::raw( selected_dm.sender_screen_name.clone() ) ),
-        Cell::from(Span::raw( selected_dm.created_at.to_string() ) ),
-        Cell::from(Span::raw( selected_dm.text.to_string() ) ),
-    ])])
+        rows_vec 
+)
     .header(Row::new(vec![
         Cell::from(Span::styled(
-            "screen name",
+            "name",
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Cell::from(Span::styled(
-            "sent at",
+            "sent @",
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Cell::from(Span::styled(
@@ -466,10 +449,10 @@ fn render_pets<'a>( dm_list_state: &ListState, connection: &Connection, user_tok
             .border_type(BorderType::Plain),
     )
     .widths(&[
-        Constraint::Percentage(15),
-        Constraint::Percentage(15),
-        Constraint::Percentage(30),
+        Constraint::Percentage(10),
+        Constraint::Percentage(10),
+        Constraint::Percentage(80),
     ]);
 
     (list, dm_detail)
-}
+} 
