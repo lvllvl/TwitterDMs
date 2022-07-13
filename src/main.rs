@@ -67,6 +67,7 @@ impl From<MenuItem> for usize {
 
 #[ tokio::main ]
 async fn main() -> Result<()> { // FIXME: async / return values are different 
+// async fn main() -> Result<(), Box<dyn Error>> { // FIXME: async / return values are different 
 
     let connection = rusqlite::Connection::open("direct_messages.db")?; // Create a SQLite table
     let mut friends_list = HashMap::new();
@@ -80,7 +81,7 @@ async fn main() -> Result<()> { // FIXME: async / return values are different
 
     friends_list.insert( request_auth.user_id.clone(), request_auth.screen_name.clone() ); 
 
-    let _messages = twitter_api::get_direct_messages( &request_auth, &connection, &mut message_list ).await;  // Get all messages
+    // let _messages = twitter_api::get_direct_messages( &request_auth, &connection, &mut message_list ).await;  // Get all messages
     // let _dms_list = read_db( &connection );  // Get all messages from database
 
     // TODO: Convert this to a test 
@@ -100,9 +101,9 @@ async fn main() -> Result<()> { // FIXME: async / return values are different
     // twitter_api::_send_dm(String::from( "1:41, Monday another test!" ), request_auth.user_id, &request_auth, &connection ).await.unwrap(); // Send a DM
     // twitter_api::update_direct_messages( &request_auth, &connection, &mut message_list).await.unwrap(); 
 
-    // TODO: STARTING HERE 
     let (tx, rx) = mpsc::channel();
-    let tick_rate = Duration::from_millis(200);
+    //let tick_rate = Duration::from_millis(200);
+    let tick_rate = Duration::from_millis(900);
     thread::spawn(move || {
         let mut last_tick = Instant::now();
         loop {
@@ -191,7 +192,7 @@ async fn main() -> Result<()> { // FIXME: async / return values are different
                     let pets_chunks = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints(
-                            [Constraint::Percentage(10), Constraint::Percentage(90)].as_ref(),
+                            [Constraint::Percentage(15), Constraint::Percentage(85)].as_ref(),
                         )
                         .split(chunks[1]);
                     let (left, right) = render_pets( &dm_list_state, &connection, &request_auth );
@@ -200,7 +201,6 @@ async fn main() -> Result<()> { // FIXME: async / return values are different
                 },
                 // MenuItem::EnterTextMessage=> rect.render_widget(render_home(), chunks[1]),
                 // MenuItem::Tweeting=> rect.render_widget(render_home(), chunks[1]),
-
             }
             rect.render_widget(copyright, chunks[2]);
         })?;
@@ -214,14 +214,14 @@ async fn main() -> Result<()> { // FIXME: async / return values are different
             }
             KeyCode::Char('h') => active_menu_item = MenuItem::Home,
             KeyCode::Char('p') => active_menu_item = MenuItem::DMs,
-            KeyCode::Char('a') => {
-                // add_random_pet_to_db().expect("can add new random pet");
-                println!("Figure out what to do with this !")
-            }
-            KeyCode::Char('d') => {
-                // remove_pet_at_index(&mut dm_list_state).expect("can remove pet");
-                println!("Figure out what to do with this !")
-            }
+            // KeyCode::Char('a') => {
+            //     // add_random_pet_to_db().expect("can add new random pet");
+            //     println!("Figure out what to do with this !")
+            // }
+            // KeyCode::Char('d') => {
+            //     // remove_pet_at_index(&mut dm_list_state).expect("can remove pet");
+            //     println!("Figure out what to do with this !")
+            // }
             KeyCode::Down => {
                 if let Some(selected) = dm_list_state.selected() {
                     let amount_pets = read_db( &connection ).expect("can fetch dm list").len();
@@ -249,7 +249,6 @@ async fn main() -> Result<()> { // FIXME: async / return values are different
     }
     Ok(())
 }
-
 
 
 fn _run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
@@ -332,6 +331,7 @@ fn render_home<'a>() -> Paragraph<'a> {
 fn read_db( conn: &Connection ) -> Result<HashMap<u64, Vec< direct_messages::Messages>>> {
     
     // FIXME: You don't need to get all this info, collect only necessary info for Message struct
+    //let mut stmt = conn.prepare( "SELECT * FROM direct_messages ORDER BY convo_id, created_at ASC")?;
     let mut stmt = conn.prepare( "SELECT * FROM direct_messages ORDER BY convo_id, created_at ASC")?;
     let message_iter = stmt.query_map( [], | row | {
 
@@ -347,24 +347,12 @@ fn read_db( conn: &Connection ) -> Result<HashMap<u64, Vec< direct_messages::Mes
         })
     })?; 
 
-    let mut convos_dict = HashMap::new(); 
+    let mut convos_dict = HashMap::new();
 
     for message in message_iter {
         let msg = message.unwrap();
         let key = msg.conversation_id.clone(); 
-        convos_dict.entry( key ).or_insert( Vec::new() ).push( msg ); 
-        // convos_dict.entry( key ).or_insert( Vec::new() ).push( 
-        //     direct_messages::Messages::_new(
-        //         msg.message_id.clone(), 
-        //         msg.created_at, 
-        //         msg.sender_id, 
-        //         msg.recipient_id, 
-        //         msg.sender_screen_name.clone(), 
-        //         msg.recipient_screen_name.clone(), 
-        //         msg.conversation_id, 
-        //         msg.text.clone()
-        //     )
-        //  ); 
+        convos_dict.entry( key ).or_insert( Vec::new() ).push( msg ); // FIXME: insert at index 0, instead of push
     }
     Ok( convos_dict ) 
 }
@@ -380,18 +368,34 @@ fn render_pets<'a>( dm_list_state: &ListState, connection: &Connection, user_tok
         .border_type(BorderType::Plain);
 
     let dm_list = read_db( connection ).expect("can fetch dm list");
+    // let ans = hash_ans.keys().cloned().collect::<Vec<String>>();
+    let mut ordered_list = dm_list.keys().cloned().collect::<Vec<u64>>();
+    ordered_list.sort();
+
     // Get dm_list keys into a list of screen names
-    let items: Vec<_> = dm_list
+    // let items: Vec<_> = dm_list
+    //     .iter()
+    //     .map( |dm| {
+    //         ListItem::new( Spans::from( vec![ Span::styled(
+    //             // dm.0.to_string(), 
+    //             twitter_api::get_sn_by_convo_id( user_token, connection, dm.0.clone() ).unwrap(), 
+    //             Style::default() 
+    //         )]))
+    // }).collect();
+    
+    let items: Vec<_> = ordered_list 
         .iter()
         .map( |dm| {
             ListItem::new( Spans::from( vec![ Span::styled(
                 // dm.0.to_string(), 
-                twitter_api::get_sn_by_convo_id( user_token, connection, dm.0.clone() ).unwrap(), 
+                twitter_api::get_sn_by_convo_id( user_token, connection, dm.clone() ).unwrap(), 
                 Style::default() 
             )]))
     }).collect();
 
-    let keys = dm_list.keys().cloned().collect::<Vec< u64 >>();
+    let mut keys = dm_list.keys().cloned().collect::<Vec< u64 >>();
+    keys.sort();
+
     let single_key = keys.get( dm_list_state.selected().expect( "something is always selcted"))
                     .expect( "Exists" )
                     .clone();
@@ -407,14 +411,14 @@ fn render_pets<'a>( dm_list_state: &ListState, connection: &Connection, user_tok
     let mut rows_vec = Vec::new();
     for s_dms in selected_dms {
 
-
        // FIXME: Figure out how to wrap text 
        rows_vec.push(  // Blank row 
-        Row::new(vec![
-            Cell::from(Span::raw( String::from( "        ") ) ),
-            Cell::from(Span::raw( String::from( "        ") ) ),
-            Cell::from(Span::raw( String::from( "        ") ) ),
-            ])) ;
+        Row::new( vec![
+        Cell::from( Span::raw( String::from( "  " ))),
+        Cell::from( Span::raw( String::from( "  " ))),
+        Cell::from( Span::raw( String::from( "  " ))),
+    ])
+    );
 
        rows_vec.push( 
         Row::new(vec![ // actual content for each row 
@@ -454,5 +458,5 @@ fn render_pets<'a>( dm_list_state: &ListState, connection: &Connection, user_tok
         Constraint::Percentage(80),
     ]);
 
-    (list, dm_detail)
+    ( list, dm_detail )
 } 

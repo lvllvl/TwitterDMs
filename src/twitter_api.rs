@@ -36,7 +36,7 @@ pub async fn requesting_user_authorization( connection: &rusqlite::Connection ) 
     if let Some('\r')=verifier.chars().next_back() {
         verifier.pop();
     }
-    println!( "You typed: {}", verifier ); //TODO: delete this 
+    // println!( "You typed: {}", verifier ); //TODO: delete this 
     
     // Return This   
     let ( token, user_id, screen_name ) = 
