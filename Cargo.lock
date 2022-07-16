@@ -285,6 +285,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tui",
+ "tui-textarea",
  "url",
 ]
 
@@ -1493,6 +1494,16 @@ dependencies = [
  "crossterm",
  "unicode-segmentation",
  "unicode-width",
+]
+
+[[package]]
+name = "tui-textarea"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d1492dfcee53628bd78ef5826c3d4ccb54229ee7a9ede0dbb75a583845ad34c"
+dependencies = [
+ "crossterm",
+ "tui",
 ]
 
 [[package]]

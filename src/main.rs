@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use futures::executor::block_on; 
 use chrono::{DateTime, Utc};
 use serde::{ Deserialize, Serialize }; 
-use rusqlite::{ Connection, NO_PARAMS } ; 
+use rusqlite::Connection; 
 use std::{
     error:: { Error }, 
     io, sync::mpsc, 
@@ -27,20 +27,13 @@ use tui::{
     text::{ Span, Spans },
     Frame, Terminal,
 };
+use tui_textarea::{ Input, Key, TextArea };
 
 mod users; 
 mod config; 
 mod twitter_api; 
 mod direct_messages;
 
-// #[derive(Serialize, Deserialize, Clone)]
-// struct Pet {
-//     id: usize,
-//     name: String,
-//     category: String,
-//     age: usize,
-//     created_at: DateTime<Utc>,
-// }
 
 // Data structure for input events
 enum Event<I> {
@@ -81,7 +74,7 @@ async fn main() -> Result<()> { // FIXME: async / return values are different
 
     friends_list.insert( request_auth.user_id.clone(), request_auth.screen_name.clone() ); 
 
-    // let _messages = twitter_api::get_direct_messages( &request_auth, &connection, &mut message_list ).await;  // Get all messages
+    let _messages = twitter_api::get_direct_messages( &request_auth, &connection, &mut message_list ).await;  // Get all messages
     // let _dms_list = read_db( &connection );  // Get all messages from database
 
     // TODO: Convert this to a test 
@@ -94,7 +87,7 @@ async fn main() -> Result<()> { // FIXME: async / return values are different
     //    "fake_recipient".to_string(), 
     //    1234567, 
     //    "FAKE FAKE FAKE FAKE!!!".to_string());
-    // println!( "INSERT == {:?}", twitter_api::insert_new_message_db( test_dm ,  &request_auth ).unwrap() ) ;
+    // println!( "INSE&RT == {:?}", twitter_api::insert_new_message_db( test_dm ,  &request_auth ).unwrap() ) ;
 
 
     // FIXME: get conversation ID, send the convo_id in the signature 
@@ -131,12 +124,21 @@ async fn main() -> Result<()> { // FIXME: async / return values are different
     terminal.clear()?;
 
     let menu_titles = vec!["Home", "DMs", "Quit"]; 
-    let mut active_menu_item = MenuItem::Home; // TODO: update based on your Menu Item 
+    let mut active_menu_item = MenuItem::Home;
     let mut dm_list_state = ListState::default(); 
     dm_list_state.select(Some(0));
 
     loop {
+
+        let mut textarea = TextArea::default();
+        textarea.set_block(
+            Block::default()
+                .borders( Borders::ALL )
+                .title( "Send DMs Here" ),
+        );
+
         terminal.draw(|rect| {
+
             let size = rect.size();
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -151,26 +153,27 @@ async fn main() -> Result<()> { // FIXME: async / return values are different
                 )
                 .split(size);
 
-            let copyright = Paragraph::new("TwitterDMs-CLI 2022.")
-                .style(Style::default().fg(Color::LightCyan))
-                .alignment(Alignment::Center)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .style(Style::default().fg(Color::White))
-                        .title("Copyright")
-                        .border_type(BorderType::Plain),
-                );
+            // let copyright = Paragraph::new("TwitterDMs-CLI 2022.")
+            //     .style(Style::default().fg(Color::LightCyan))
+            //     .alignment(Alignment::Center)
+            //     .block(
+            //         Block::default()
+            //             .borders(Borders::ALL)
+            //             .style(Style::default().fg(Color::White))
+            //             .title("Copyright")
+            //             .border_type(BorderType::Plain),
+            //     );
 
             let menu = menu_titles
                 .iter()
                 .map(|t| {
+
                     let (first, rest) = t.split_at(1);
                     Spans::from(vec![
                         Span::styled(
                             first,
                             Style::default()
-                                .fg(Color::Yellow)
+                                .fg(Color::White)
                                 .add_modifier(Modifier::UNDERLINED),
                         ),
                         Span::styled(rest, Style::default().fg(Color::White)),
@@ -178,17 +181,31 @@ async fn main() -> Result<()> { // FIXME: async / return values are different
                 })
                 .collect();
 
+            // let mut textarea = TextArea::default();
+            // textarea.set_block(
+            //     Block::default()
+            //         .borders( Borders::ALL )
+            //         .title( "Send DMs Here" ),
+            // );
+
             let tabs = Tabs::new(menu)
                 .select(active_menu_item.into())
                 .block(Block::default().title("Menu").borders(Borders::ALL))
                 .style(Style::default().fg(Color::White))
                 .highlight_style(Style::default().fg(Color::Yellow))
                 .divider(Span::raw("|"));
-
             rect.render_widget(tabs, chunks[0]);
+
             match active_menu_item {
                 MenuItem::Home => rect.render_widget(render_home(), chunks[1]),
                 MenuItem::DMs => {
+                    // let mut textarea = TextArea::default();
+                    // textarea.set_block(
+                    //     Block::default()
+                    //         .borders( Borders::ALL )
+                    //         .title( "Send DMs Here" ),
+                    // );
+
                     let pets_chunks = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints(
@@ -198,30 +215,43 @@ async fn main() -> Result<()> { // FIXME: async / return values are different
                     let (left, right) = render_pets( &dm_list_state, &connection, &request_auth );
                     rect.render_stateful_widget(left, pets_chunks[0], &mut dm_list_state);
                     rect.render_widget(right, pets_chunks[1]);
+                    rect.render_widget( textarea.widget(),  chunks[2] ); 
                 },
-                // MenuItem::EnterTextMessage=> rect.render_widget(render_home(), chunks[1]),
+                // MenuItem::EnterTextMessage=> { 
+                    
+                // let mut textarea = TextArea::default();
+                // textarea.set_block(
+                //     Block::default()
+                //         .borders( Borders::ALL )
+                //         .title( "Send DMs Here" ),
+                // );
+                
+                // rect.render_widget( textarea.widget(), chunks[2]);
+
+                // },
                 // MenuItem::Tweeting=> rect.render_widget(render_home(), chunks[1]),
             }
-            rect.render_widget(copyright, chunks[2]);
+            // rect.render_widget(copyright, chunks[2]);
         })?;
 
         match rx.recv()? {
+
         Event::Input(event) => match event.code {
-            KeyCode::Char('q') => {
+
+            KeyCode::Esc => {
                 disable_raw_mode()?;
                 terminal.show_cursor()?;
                 break;
             }
             KeyCode::Char('h') => active_menu_item = MenuItem::Home,
             KeyCode::Char('p') => active_menu_item = MenuItem::DMs,
-            // KeyCode::Char('a') => {
-            //     // add_random_pet_to_db().expect("can add new random pet");
-            //     println!("Figure out what to do with this !")
-            // }
-            // KeyCode::Char('d') => {
-            //     // remove_pet_at_index(&mut dm_list_state).expect("can remove pet");
-            //     println!("Figure out what to do with this !")
-            // }
+            // KeyCode::Char( 'd' ) => active_menu_item = MenuItem::EnterTextMessage,
+// _send_dm( text: String, recipient_id: u64, user_token: &Users, connection: &Connection ) -> Result<()> {
+            KeyCode::F(1) => {
+                twitter_api::_send_dm( "The Bourne Legacy".to_string(), request_auth.user_id, &request_auth, &connection).await.unwrap();
+                // FIXME: Function below does not work : SQLite --> Constraint violation ? 
+                // twitter_api::update_direct_messages( &request_auth, &connection, &mut message_list ).await.unwrap();
+            }
             KeyCode::Down => {
                 if let Some(selected) = dm_list_state.selected() {
                     let amount_pets = read_db( &connection ).expect("can fetch dm list").len();
@@ -311,7 +341,7 @@ fn render_home<'a>() -> Paragraph<'a> {
             Style::default().fg(Color::LightBlue),
         )]),
         Spans::from(vec![Span::raw("")]),
-        Spans::from(vec![Span::raw("Press 'p' to access direct messages, 'a' to ______ and 'd' to _______.")]),
+        Spans::from(vec![Span::raw("Press 'p' to access direct messages, 'h' to return to home page, 'd' to send a direct message.")]),
     ])
     .alignment(Alignment::Center)
     .block(
