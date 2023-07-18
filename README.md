@@ -9,7 +9,7 @@ This project currently uses a rusqlite database to temporarily store and access 
 
 UI Example: 
 
-![UI Twitter Image]('../images/ui_twitter_dms.png')
+![UI Twitter Image]('./images/ui_twitter_dms.png')
 
 ## What needs to be done?
 
