@@ -7,8 +7,9 @@ This project accesses the Twitter API using Rust egg_mode.
 
 This project currently uses a rusqlite database to temporarily store and access DMs. 
 
-Not sure if I want to use TUI-rust or Rust::Rocket as a UI. TBD. 
+UI Example: 
 
+[Image]('../images/ui_twitter_dms.png')
 
 ## What needs to be done?
 
